@@ -1,0 +1,37 @@
+LoadAvg: 1.94 3.44 5.07
+MemoryUsed: 9,220,838,392
+MemoryMax: 18,312,855,552
+StartupTime: Mon Jan 28 14:24:03 CET 2019
+MissingLocalizationCount: 0
+ThreadCount: 3009
+ThreadPeakCount: 4806
+CPUCountFromProc: 12
+CPUCountFromJava: 24
+GC_StatisticsAge: 357500109
+GC_PS_Scavenge_Count: 5050
+GC_PS_Scavenge_Time: 1824745
+GC_PS_Scavenge_AvgTime: 361
+GC_PS_Scavenge_AvgInterval: 70792
+GC_PS_MarkSweep_Count: 123
+GC_PS_MarkSweep_Time: 781459
+GC_PS_MarkSweep_AvgTime: 6353
+GC_PS_MarkSweep_AvgInterval: 2906504
+ReleaseTag: catalog.deployment.server-release-2019-01-21-A
+DuplicatesSetCount: 21822857
+DuplicatesChangedSetsDuringReloadCount: 255180
+DuplicatesMatchedCount: 230703851
+DuplicatesContentCount: 16631384
+VeryLongActive: 0
+MethodRunTime_ByClass_CatalogDuplicatesService: count=2,597 averageValue=1 realMaxValue=1,067 averageEventRate=43.283 maxEventRate=74 stdDeviation=23 maxValue=24
+MethodRuntime_CatalogDuplicatesService.finishBatchRetrievalOfDuplicateSets: count=0 averageValue=0 realMaxValue=0 averageEventRate=0 maxEventRate=0 stdDeviation=0 maxValue=0
+MethodRuntime_CatalogDuplicatesService.finishBatchRetrievalOfLoadedReferences: count=0 averageValue=0 realMaxValue=0 averageEventRate=0 maxEventRate=0 stdDeviation=0 maxValue=0
+MethodRuntime_CatalogDuplicatesService.getContentIdsThatHaveArticleIds: count=0 averageValue=0 realMaxValue=0 averageEventRate=0 maxEventRate=0 stdDeviation=0 maxValue=0
+MethodRuntime_CatalogDuplicatesService.getDuplicateSets: count=0 averageValue=0 realMaxValue=0 averageEventRate=0 maxEventRate=0 stdDeviation=0 maxValue=0
+MethodRuntime_CatalogDuplicatesService.getDuplicateSets: count=2,597 averageValue=1 realMaxValue=1,067 averageEventRate=43.283 maxEventRate=74 stdDeviation=23 maxValue=24
+MethodRuntime_CatalogDuplicatesService.getDuplicateSetsBatch: count=0 averageValue=0 realMaxValue=0 averageEventRate=0 maxEventRate=0 stdDeviation=0 maxValue=0
+MethodRuntime_CatalogManagementService.setLive: count=8 averageValue=156 realMaxValue=546 averageEventRate=0.133 maxEventRate=2 stdDeviation=157 maxValue=313
+MethodRuntime_CatalogManagementService.setOffline: count=0 averageValue=0 realMaxValue=0 averageEventRate=0 maxEventRate=0 stdDeviation=0 maxValue=0
+MethodRuntime_CatalogManagementService.stopPreview: count=9 averageValue=87 realMaxValue=171 averageEventRate=0.15 maxEventRate=2 stdDeviation=49 maxValue=136
+MethodRunTime_ByClass_CatalogDeploymentServerBo: count=6 averageValue=10 realMaxValue=61 averageEventRate=0.1 maxEventRate=2 stdDeviation=22 maxValue=32
+MethodRunTime_ByClass_CatalogDeploymentServerBoSupplier: count=0 averageValue=0 realMaxValue=0 averageEventRate=0 maxEventRate=0 stdDeviation=0 maxValue=0
+MethodRunTime_ByClass_CatalogManagementService: count=21 averageValue=109 realMaxValue=546 averageEventRate=0.35 maxEventRate=3 stdDeviation=109 maxValue=218
