@@ -25,13 +25,18 @@ func TestPatchLoadAvg_ok(t *testing.T) {
 
 	wants := []prometheus.Metric{la1Metric, la5Metric, la15Metric}
 
-	ch := make(chan prometheus.Metric)
+	ch := make(chan prometheus.Metric, 3)
 	defer close(ch)
 
 	// WHEN
-	go patchLoadAvg(input, ch)
+	err := patchLoadAvg(input, ch)
 
 	// THEN
+	assert.NoError(err)
+	if err != nil {
+		return
+	}
+
 	var results []prometheus.Metric
 	for i := 0; i < len(wants); i++ {
 		results = append(results, <-ch)
@@ -41,13 +46,13 @@ func TestPatchLoadAvg_ok(t *testing.T) {
 		result := results[i]
 		wantDesc := want.Desc().String()
 		resultDesc := result.Desc().String()
-		assert.Equal(wantDesc, resultDesc, "Descriptions are different! Wanted: %v, got: ", wantDesc, resultDesc)
+		assert.Equal(wantDesc, resultDesc, "descriptions are different! Wanted: %v, got: ", wantDesc, resultDesc)
 
 		wantMetric := dto.Metric{}
 		resultMetric := dto.Metric{}
 		want.Write(&wantMetric)
 		result.Write(&resultMetric)
-		assert.Equal(wantMetric.String(), resultMetric.String(), "Metrics are different! Wanted: %v, got: %v", wantMetric.String(), resultMetric.String())
+		assert.Equal(wantMetric.String(), resultMetric.String(), "metrics are different! Wanted: %v, got: %v", wantMetric.String(), resultMetric.String())
 	}
 }
 
@@ -61,8 +66,49 @@ func TestPatchLoadAvg_invalidInput(t *testing.T) {
 	defer close(ch)
 
 	// WHEN
-	result := patchLoadAvg(invalidInput, ch)
+	err := patchLoadAvg(invalidInput, ch)
 
 	// THEN
-	assert.NotNil(result, "patchLoadAvg must return error for invalid input")
+	assert.NotNilf(err, "patchLoadAvg should return error for invalid input")
+}
+
+func TestPatchNumberSeparators_ok(t *testing.T) {
+	assert := assert.New(t)
+	type testpair struct {
+		metric []byte
+		result float64
+	}
+
+	var tests = []testpair{
+		{[]byte("MemoryUsed: 9,220,838,392"), 9220838392},
+		{[]byte("MemoryUsed: 9.220.838.392"), 9220838392},
+		{[]byte("MemoryUsed: 9220838392,01"), 9220838392.01},
+		{[]byte("MemoryUsed: 9,220,838,392.01"), 9220838392.01},
+		{[]byte("MemoryUsed: 9.220.838.392,01"), 9220838392.01},
+	}
+
+	for _, test := range tests {
+		ch := make(chan prometheus.Metric, 1)
+		defer close(ch)
+
+		err := patchNumberSeparators(test.metric, ch)
+		assert.NoError(err)
+		if err != nil {
+			return
+		}
+
+		result := <-ch
+		resultDesc := result.Desc().String()
+
+		wantDesc := prometheus.NewDesc("MemoryUsed", "", nil, nil)
+		want := prometheus.MustNewConstMetric(wantDesc, prometheus.GaugeValue, test.result)
+		assert.Equal(wantDesc.String(), resultDesc, "descriptions are different! Wanted: %v, got: %v, metric: %s", wantDesc, resultDesc, test.metric)
+
+		wantMetric := dto.Metric{}
+		resultMetric := dto.Metric{}
+		want.Write(&wantMetric)
+		result.Write(&resultMetric)
+		assert.Equal(wantMetric.String(), resultMetric.String(), "metrics are different! Wanted: %v, got: %v, metric: %s", wantMetric.String(), resultMetric.String(), test.metric)
+	}
+
 }

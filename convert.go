@@ -22,6 +22,18 @@ func isValidMetric(metric []byte) bool {
 	return true
 }
 
+func createPrometheusMetric(name string, desc string, value string, metricType prometheus.ValueType) (prometheus.Metric, error) {
+	promDesc := prometheus.NewDesc(name, desc, nil, nil)
+
+	floatValue, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return nil, fmt.Errorf("can't parse: %v to float", value)
+	}
+
+	metric := prometheus.MustNewConstMetric(promDesc, metricType, floatValue)
+	return metric, nil
+}
+
 func patchLoadAvg(metric []byte, ch chan<- prometheus.Metric) error {
 	re := regexp.MustCompile(`^LoadAvg: (?P<la1m>\d+(\.\d+)?) (?P<la5m>\d+(\.\d+)?) (?P<la15m>\d+(\.\d+)?)$`)
 
@@ -31,27 +43,20 @@ func patchLoadAvg(metric []byte, ch chan<- prometheus.Metric) error {
 
 	matchResult := re.FindSubmatch(metric)
 
-	la1Value, err := strconv.ParseFloat(string(matchResult[1]), 64)
+	la1Metric, err := createPrometheusMetric("load_avertage1", "1m load average.", string(matchResult[1]), prometheus.GaugeValue)
 	if err != nil {
-		return fmt.Errorf("can't parse: %v to float", matchResult[1])
-	}
-	la5Value, err := strconv.ParseFloat(string(matchResult[3]), 64)
-	if err != nil {
-		return fmt.Errorf("can't parse: %v to float", matchResult[3])
-	}
-	la15Value, err := strconv.ParseFloat(string(matchResult[5]), 64)
-	if err != nil {
-		return fmt.Errorf("can't parse: %v to float", matchResult[5])
+		return err
 	}
 
-	la1Desc := prometheus.NewDesc("load_avertage1", "1m load average.", nil, nil)
-	la1Metric := prometheus.MustNewConstMetric(la1Desc, prometheus.GaugeValue, la1Value)
+	la5Metric, err := createPrometheusMetric("load_avertage5", "5m load average.", string(matchResult[3]), prometheus.GaugeValue)
+	if err != nil {
+		return err
+	}
 
-	la5Desc := prometheus.NewDesc("load_avertage5", "5m load average.", nil, nil)
-	la5Metric := prometheus.MustNewConstMetric(la5Desc, prometheus.GaugeValue, la5Value)
-
-	la15Desc := prometheus.NewDesc("load_avertage15", "15m load average.", nil, nil)
-	la15Metric := prometheus.MustNewConstMetric(la15Desc, prometheus.GaugeValue, la15Value)
+	la15Metric, err := createPrometheusMetric("load_avertage15", "15m load average.", string(matchResult[5]), prometheus.GaugeValue)
+	if err != nil {
+		return err
+	}
 
 	ch <- la1Metric
 	ch <- la5Metric
@@ -60,9 +65,68 @@ func patchLoadAvg(metric []byte, ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-func patchNumberSeparators(metric []byte) []byte {
+func patchNumberSeparators(metric []byte, ch chan<- prometheus.Metric) error {
 	// https://docs.oracle.com/cd/E19455-01/806-0169/overview-9/index.html
-	return metric
+	re := regexp.MustCompile(`^([a-zA-Z_:]([a-zA-Z0-9_:])*): ([0-9]([0-9,.])+[0-9])$`)
+
+	if !(re.Match(metric)) {
+		return fmt.Errorf("no metric with numberic value found in: %s", metric)
+	}
+
+	name := re.FindSubmatch(metric)[1]
+	value := re.FindSubmatch(metric)[3]
+
+	re = regexp.MustCompile(`^[0-9]([0-9,])+[0-9]$`)
+	if re.Match(value) {
+		value = bytes.Replace(value, []byte(","), []byte("."), -1)
+		// promMetric, err := createPrometheusMetric(string(name), "", string(resultValue), prometheus.GaugeValue)
+		// if err != nil {
+		// 	return err
+		// }
+		// ch <- promMetric
+		// return nil
+	}
+
+	re = regexp.MustCompile(`^[0-9]+(\.[0-9]+){2,}$`)
+	if re.Match(value) {
+		resultValue := bytes.Replace(value, []byte("."), []byte(""), -1)
+		promMetric, err := createPrometheusMetric(string(name), "", string(resultValue), prometheus.GaugeValue)
+		if err != nil {
+			return err
+		}
+		ch <- promMetric
+		return nil
+	}
+
+	re = regexp.MustCompile(`^[0-9]+(.[0-9]+)+,[0-9]+$`)
+	if re.Match(value) {
+		value = bytes.Replace(value, []byte("."), []byte(""), -1)
+		value = bytes.Replace(value, []byte(","), []byte("."), -1)
+		promMetric, err := createPrometheusMetric(string(name), "", string(value), prometheus.GaugeValue)
+		if err != nil {
+			return err
+		}
+		ch <- promMetric
+		return nil
+	}
+
+	re = regexp.MustCompile(`^[0-9]+(,[0-9]+)+.[0-9]+$`)
+	if re.Match(value) {
+		value = bytes.Replace(value, []byte(","), []byte(""), -1)
+		promMetric, err := createPrometheusMetric(string(name), "", string(value), prometheus.GaugeValue)
+		if err != nil {
+			return err
+		}
+		ch <- promMetric
+		return nil
+	}
+
+	promMetric, err := createPrometheusMetric(string(name), "", string(value), prometheus.GaugeValue)
+	if err != nil {
+		return err
+	}
+	ch <- promMetric
+	return nil
 }
 
 func patchStartupTime(metric []byte) []byte {
@@ -76,7 +140,7 @@ func patchReleaseTag(metric []byte) []byte {
 func fixAndAddMetric(metric []byte) ([]byte, error) {
 	// r := regexp.MustCompile("^[a-zA-Z_:]([a-zA-Z0-9_:])*$")
 	// patchLoadAvg(metric)
-	patchNumberSeparators(metric)
+	// patchNumberSeparators(metric,)
 	patchStartupTime(metric)
 	patchReleaseTag(metric)
 	return metric, nil
