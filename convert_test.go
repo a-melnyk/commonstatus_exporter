@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
@@ -85,6 +86,8 @@ func TestPatchNumberSeparators_ok(t *testing.T) {
 		{[]byte("MemoryUsed: 9220838392,01"), 9220838392.01},
 		{[]byte("MemoryUsed: 9,220,838,392.01"), 9220838392.01},
 		{[]byte("MemoryUsed: 9.220.838.392,01"), 9220838392.01},
+		{[]byte("MemoryUsed: 4.997,14"), 4997.14},
+		{[]byte("MemoryUsed: 4,997.14"), 4997.14},
 	}
 
 	for _, test := range tests {
@@ -110,5 +113,44 @@ func TestPatchNumberSeparators_ok(t *testing.T) {
 		result.Write(&resultMetric)
 		assert.Equal(wantMetric.String(), resultMetric.String(), "metrics are different! Wanted: %v, got: %v, metric: %s", wantMetric.String(), resultMetric.String(), test.metric)
 	}
+}
 
+func TestPatchStartupTime_ok(t *testing.T) {
+	assert := assert.New(t)
+	type testpair struct {
+		metric    []byte
+		timestamp int64
+	}
+
+	var tests = []testpair{
+		{[]byte("StartupTime: Mon Jan 28 14:24:03 CET 2019"), 1548681843},
+		{[]byte("StartupTime: Tue Jan 01 14:24:00 CET 2019"), 1546349040},
+		{[]byte("StartupTime: Tue Jan 01 14:24:00 GMT 2019"), 1546352640},
+	}
+
+	for _, test := range tests {
+		ch := make(chan prometheus.Metric, 1)
+		defer close(ch)
+
+		err := patchStartupTime(test.metric, ch)
+		assert.NoError(err)
+		if err != nil {
+			return
+		}
+
+		result := <-ch
+		resultDesc := result.Desc().String()
+
+		wantDesc := prometheus.NewDesc("app_uptime_seconds_total", "Time that an application is running", nil, nil)
+		uptime := time.Since(time.Unix(test.timestamp, 0)).Seconds()
+		want := prometheus.MustNewConstMetric(wantDesc, prometheus.CounterValue, uptime)
+		assert.Equal(wantDesc.String(), resultDesc, "descriptions are different! Wanted: %v, got: %v, metric: %s", wantDesc, resultDesc, test.metric)
+
+		wantMetric := dto.Metric{}
+		resultMetric := dto.Metric{}
+		want.Write(&wantMetric)
+		result.Write(&resultMetric)
+		resultValue := *(resultMetric.GetCounter().Value)
+		assert.InDelta(uptime, resultValue, 1, "metrics are different! Wanted: %v, got: %v, metric: %s", uptime, resultValue, test.metric)
+	}
 }

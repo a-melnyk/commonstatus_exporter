@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/util/promlint"
@@ -29,6 +30,8 @@ func createPrometheusMetric(name string, desc string, value string, metricType p
 	if err != nil {
 		return nil, fmt.Errorf("can't parse: %v to float", value)
 	}
+
+	// TODO: fix metric name - replace invalid symbols with underscores
 
 	metric := prometheus.MustNewConstMetric(promDesc, metricType, floatValue)
 	return metric, nil
@@ -79,12 +82,6 @@ func patchNumberSeparators(metric []byte, ch chan<- prometheus.Metric) error {
 	re = regexp.MustCompile(`^[0-9]([0-9,])+[0-9]$`)
 	if re.Match(value) {
 		value = bytes.Replace(value, []byte(","), []byte("."), -1)
-		// promMetric, err := createPrometheusMetric(string(name), "", string(resultValue), prometheus.GaugeValue)
-		// if err != nil {
-		// 	return err
-		// }
-		// ch <- promMetric
-		// return nil
 	}
 
 	re = regexp.MustCompile(`^[0-9]+(\.[0-9]+){2,}$`)
@@ -129,20 +126,38 @@ func patchNumberSeparators(metric []byte, ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-func patchStartupTime(metric []byte) []byte {
-	return metric
+func patchStartupTime(metric []byte, ch chan<- prometheus.Metric) error {
+	re := regexp.MustCompile(`^StartupTime: (.*)$`)
+
+	if !(re.Match(metric)) {
+		return fmt.Errorf("no metric with numberic value found in: %s", metric)
+	}
+
+	value := re.FindSubmatch(metric)[1]
+
+	parsedTime, err := time.Parse(time.UnixDate, string(value))
+	if err != nil {
+		return err
+	}
+	uptime := time.Since(parsedTime).Seconds()
+
+	promDesc := prometheus.NewDesc("app_uptime_seconds_total", "Time that an application is running", nil, nil)
+	promMetric := prometheus.MustNewConstMetric(promDesc, prometheus.CounterValue, uptime)
+
+	ch <- promMetric
+	return nil
 }
 
-func patchReleaseTag(metric []byte) []byte {
-	return metric
+func patchReleaseTag(metric []byte, ch chan<- prometheus.Metric) error {
+	return nil
 }
 
 func fixAndAddMetric(metric []byte) ([]byte, error) {
 	// r := regexp.MustCompile("^[a-zA-Z_:]([a-zA-Z0-9_:])*$")
 	// patchLoadAvg(metric)
 	// patchNumberSeparators(metric,)
-	patchStartupTime(metric)
-	patchReleaseTag(metric)
+	// patchStartupTime(metric)
+	// patchReleaseTag(metric)
 	return metric, nil
 }
 
@@ -175,6 +190,8 @@ func main() { //convert()
 		metric := append(line, '\n')
 		// metric := line
 
+		// set instance and application_name  labels for all metrics
+		// set commonstatus_info metric and label wil application versions
 		fmt.Printf("Metric #%v is %s, byte: %v, len: %v", i, metric, metric, len(metric))
 
 		if isValidMetric(metric) {
