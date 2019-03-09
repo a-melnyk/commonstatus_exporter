@@ -24,14 +24,15 @@ func isValidMetric(metric []byte) bool {
 }
 
 func createPrometheusMetric(name string, desc string, value string, metricType prometheus.ValueType) (prometheus.Metric, error) {
+	invalidChars := regexp.MustCompile("[^a-zA-Z0-9:_]")
+	name = invalidChars.ReplaceAllLiteralString(name, "_")
+
 	promDesc := prometheus.NewDesc(name, desc, nil, nil)
 
 	floatValue, err := strconv.ParseFloat(value, 64)
 	if err != nil {
 		return nil, fmt.Errorf("can't parse: %v to float", value)
 	}
-
-	// TODO: fix metric name - replace invalid symbols with underscores
 
 	metric := prometheus.MustNewConstMetric(promDesc, metricType, floatValue)
 	return metric, nil
@@ -69,7 +70,6 @@ func patchLoadAvg(metric []byte, ch chan<- prometheus.Metric) error {
 }
 
 func patchNumberSeparators(metric []byte, ch chan<- prometheus.Metric) error {
-	// https://docs.oracle.com/cd/E19455-01/806-0169/overview-9/index.html
 	re := regexp.MustCompile(`^([a-zA-Z_:]([a-zA-Z0-9_:])*): ([0-9]([0-9,.])+[0-9])$`)
 
 	if !(re.Match(metric)) {
@@ -148,8 +148,24 @@ func patchStartupTime(metric []byte, ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-func patchReleaseTag(metric []byte, ch chan<- prometheus.Metric) error {
+func parseReleaseTag(metric []byte, infoLabels *prometheus.Labels) error {
+	re := regexp.MustCompile(`^ReleaseTag: (.*)$`)
+
+	if !re.Match(metric) {
+		return fmt.Errorf("the metric doesn't contain a ReleaseTag: %s", metric)
+	}
+
+	releaseTag := string(re.FindSubmatch(metric)[1])
+	(*infoLabels)["release_tag"] = releaseTag
+
 	return nil
+}
+
+func createInfoMetric(ch chan<- prometheus.Metric, infoLabels *prometheus.Labels) {
+	promDesc := prometheus.NewDesc("commonstatus_info", "commonstatus information", nil, *infoLabels)
+	promMetric := prometheus.MustNewConstMetric(promDesc, prometheus.GaugeValue, float64(1))
+
+	ch <- promMetric
 }
 
 func fixAndAddMetric(metric []byte) ([]byte, error) {

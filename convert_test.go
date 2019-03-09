@@ -154,3 +154,38 @@ func TestPatchStartupTime_ok(t *testing.T) {
 		assert.InDelta(uptime, resultValue, 1, "metrics are different! Wanted: %v, got: %v, metric: %s", uptime, resultValue, test.metric)
 	}
 }
+
+func TestParseReleaseTag_ok(t *testing.T) {
+	assert := assert.New(t)
+	type testpair struct {
+		metric []byte
+		want   prometheus.Labels
+	}
+
+	var tests = []testpair{
+		{[]byte("ReleaseTag: catalog.deployment.server-release-2019-01-21-A"), prometheus.Labels{"release_tag": "catalog.deployment.server-release-2019-01-21-A"}},
+		{[]byte("ReleaseTag: DEV-ITD_123-bla-test"), prometheus.Labels{"release_tag": "DEV-ITD_123-bla-test"}},
+		{[]byte("ReleaseTag: 0.0.32"), prometheus.Labels{"release_tag": "0.0.32"}},
+	}
+
+	for _, test := range tests {
+		infoLabels := make(prometheus.Labels)
+
+		err := parseReleaseTag(test.metric, &infoLabels)
+		assert.NoError(err)
+		if err != nil {
+			return
+		}
+
+		assert.Equal(test.want, infoLabels, "the infoLabel is wrong! Wanted: %v, got: %v, metric: %s", test.want, infoLabels, test.metric)
+	}
+}
+
+// func TestCreateInfoMetric_ok(t *testing.T) {
+// 	assert := assert.New(t)
+// 	type testpair struct {
+// 		metric []byte
+// 		want   prometheus.Labels
+// 	}
+
+// }
