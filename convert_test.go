@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"io/ioutil"
 	"testing"
 	"time"
 
@@ -9,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestPatchLoadAvg_ok(t *testing.T) {
+func TestConvertLoadAvg_ok(t *testing.T) {
 	assert := assert.New(t)
 
 	// GIVEN
@@ -30,7 +32,7 @@ func TestPatchLoadAvg_ok(t *testing.T) {
 	defer close(ch)
 
 	// WHEN
-	err := patchLoadAvg(input, ch)
+	err := convertLoadAvg(input, ch)
 
 	// THEN
 	assert.NoError(err)
@@ -57,7 +59,7 @@ func TestPatchLoadAvg_ok(t *testing.T) {
 	}
 }
 
-func TestPatchLoadAvg_invalidInput(t *testing.T) {
+func TestConvertLoadAvg_invalidInput(t *testing.T) {
 	assert := assert.New(t)
 
 	// GIVEN
@@ -67,13 +69,13 @@ func TestPatchLoadAvg_invalidInput(t *testing.T) {
 	defer close(ch)
 
 	// WHEN
-	err := patchLoadAvg(invalidInput, ch)
+	err := convertLoadAvg(invalidInput, ch)
 
 	// THEN
-	assert.NotNilf(err, "patchLoadAvg should return error for invalid input")
+	assert.NotNilf(err, "convertLoadAvg should return error for invalid input")
 }
 
-func TestPatchNumberSeparators_ok(t *testing.T) {
+func TestConvertNumberSeparators_ok(t *testing.T) {
 	assert := assert.New(t)
 	type testpair struct {
 		metric []byte
@@ -88,13 +90,14 @@ func TestPatchNumberSeparators_ok(t *testing.T) {
 		{[]byte("MemoryUsed: 9.220.838.392,01"), 9220838392.01},
 		{[]byte("MemoryUsed: 4.997,14"), 4997.14},
 		{[]byte("MemoryUsed: 4,997.14"), 4997.14},
+		{[]byte("MemoryUsed: 0"), 0},
 	}
 
 	for _, test := range tests {
 		ch := make(chan prometheus.Metric, 1)
 		defer close(ch)
 
-		err := patchNumberSeparators(test.metric, ch)
+		err := convertNumberSeparators(test.metric, ch)
 		assert.NoError(err)
 		if err != nil {
 			return
@@ -115,7 +118,7 @@ func TestPatchNumberSeparators_ok(t *testing.T) {
 	}
 }
 
-func TestPatchStartupTime_ok(t *testing.T) {
+func TestConvertStartupTime_ok(t *testing.T) {
 	assert := assert.New(t)
 	type testpair struct {
 		metric    []byte
@@ -132,7 +135,7 @@ func TestPatchStartupTime_ok(t *testing.T) {
 		ch := make(chan prometheus.Metric, 1)
 		defer close(ch)
 
-		err := patchStartupTime(test.metric, ch)
+		err := convertStartupTime(test.metric, ch)
 		assert.NoError(err)
 		if err != nil {
 			return
@@ -181,11 +184,47 @@ func TestParseReleaseTag_ok(t *testing.T) {
 	}
 }
 
-// func TestCreateInfoMetric_ok(t *testing.T) {
-// 	assert := assert.New(t)
-// 	type testpair struct {
-// 		metric []byte
-// 		want   prometheus.Labels
-// 	}
+func TestCreateInfoMetric_ok(t *testing.T) {
+	assert := assert.New(t)
 
-// }
+	tests := []prometheus.Labels{
+		prometheus.Labels{"release_tag": "DEV-ITD_123-bla-test", "branch": "HEAD", "build": ""},
+		prometheus.Labels{"release_tag": "0.0.32"},
+	}
+
+	for _, labels := range tests {
+		ch := make(chan prometheus.Metric, 1)
+		defer close(ch)
+
+		createInfoMetric(&labels, ch)
+
+		result := <-ch
+		resultMetric := dto.Metric{}
+		result.Write(&resultMetric)
+		resultValue := *(resultMetric.GetGauge().Value)
+		resultLabels := (resultMetric.GetLabel())
+
+		for _, resultLabel := range resultLabels {
+			assert.NotNil(labels[resultLabel.GetName()])
+			assert.Equal(labels[resultLabel.GetName()], resultLabel.GetValue())
+		}
+		assert.Equal(float64(1), resultValue)
+	}
+}
+
+func TestConvertMetric_ok(t *testing.T) {
+	assert := assert.New(t)
+
+	validMetrics, _ := ioutil.ReadFile("valid_metrics.txt")
+
+	for _, metric := range bytes.Split(validMetrics, []byte{'\n'}) {
+		ch := make(chan prometheus.Metric, 99)
+		defer close(ch)
+
+		err := convertMetric(metric, ch)
+		assert.NoError(err)
+		if err != nil {
+			return
+		}
+	}
+}

@@ -3,25 +3,12 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
-	"net/http"
 	"regexp"
 	"strconv"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/util/promlint"
 )
-
-func isValidMetric(metric []byte) bool {
-	l := promlint.New(bytes.NewReader(metric))
-
-	if _, err := l.Lint(); err != nil {
-		return false
-	}
-
-	return true
-}
 
 func createPrometheusMetric(name string, desc string, value string, metricType prometheus.ValueType) (prometheus.Metric, error) {
 	invalidChars := regexp.MustCompile("[^a-zA-Z0-9:_]")
@@ -38,7 +25,7 @@ func createPrometheusMetric(name string, desc string, value string, metricType p
 	return metric, nil
 }
 
-func patchLoadAvg(metric []byte, ch chan<- prometheus.Metric) error {
+func convertLoadAvg(metric []byte, ch chan<- prometheus.Metric) error {
 	re := regexp.MustCompile(`^LoadAvg: (?P<la1m>\d+(\.\d+)?) (?P<la5m>\d+(\.\d+)?) (?P<la15m>\d+(\.\d+)?)$`)
 
 	if !(re.Match(metric)) {
@@ -69,8 +56,8 @@ func patchLoadAvg(metric []byte, ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-func patchNumberSeparators(metric []byte, ch chan<- prometheus.Metric) error {
-	re := regexp.MustCompile(`^([a-zA-Z_:]([a-zA-Z0-9_:])*): ([0-9]([0-9,.])+[0-9])$`)
+func convertNumberSeparators(metric []byte, ch chan<- prometheus.Metric) error {
+	re := regexp.MustCompile(`^([a-zA-Z_:]([a-zA-Z0-9_:])*): ([0-9]+([0-9,.])*[0-9]*)$`)
 
 	if !(re.Match(metric)) {
 		return fmt.Errorf("no metric with numberic value found in: %s", metric)
@@ -126,7 +113,7 @@ func patchNumberSeparators(metric []byte, ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-func patchStartupTime(metric []byte, ch chan<- prometheus.Metric) error {
+func convertStartupTime(metric []byte, ch chan<- prometheus.Metric) error {
 	re := regexp.MustCompile(`^StartupTime: (.*)$`)
 
 	if !(re.Match(metric)) {
@@ -161,61 +148,45 @@ func parseReleaseTag(metric []byte, infoLabels *prometheus.Labels) error {
 	return nil
 }
 
-func createInfoMetric(ch chan<- prometheus.Metric, infoLabels *prometheus.Labels) {
+func createInfoMetric(infoLabels *prometheus.Labels, ch chan<- prometheus.Metric) {
 	promDesc := prometheus.NewDesc("commonstatus_info", "commonstatus information", nil, *infoLabels)
 	promMetric := prometheus.MustNewConstMetric(promDesc, prometheus.GaugeValue, float64(1))
 
 	ch <- promMetric
 }
 
-func fixAndAddMetric(metric []byte) ([]byte, error) {
-	// r := regexp.MustCompile("^[a-zA-Z_:]([a-zA-Z0-9_:])*$")
-	// patchLoadAvg(metric)
-	// patchNumberSeparators(metric,)
-	// patchStartupTime(metric)
-	// patchReleaseTag(metric)
-	return metric, nil
-}
-
-func processMethodRunTimeMetric(metric []byte) {
+func convertMethodRunTime(metric []byte) {
+	// TODO: create function
 	// process MethodRunTime_ metric and add prom metrics to the registry
 	if match, err := regexp.Match("^MethodRunTime_", metric); match && err == nil {
 		// continue
 	}
 }
 
-func main() { //convert()
-	response, err := http.Get("http://localhost:8080/status?detail=all")
-	if err != nil {
-		fmt.Printf("http.get Error ocurred: %s", err)
-		// ch <- prometheus.MustNewConstMetric(up, prometheus.GaugeValue, 0)
-		return
+// convertMetric converts []byte line into a prometheusMetric
+func convertMetric(metric []byte, ch chan<- prometheus.Metric) error {
+	re := regexp.MustCompile(`^([a-zA-Z_:]([a-zA-Z0-9_:])*): .*$`)
+	if !re.Match(metric) {
+		return fmt.Errorf("the string doesn't contain a valid metric: %s", metric)
 	}
 
-	defer response.Body.Close()
-	body, err := ioutil.ReadAll(response.Body)
-	if err != nil {
-		fmt.Printf("ReadAll Error ocurred: %s", err)
-		// ch <- prometheus.MustNewConstMetric(up, prometheus.GaugeValue, 0)
-		return
+	infoLabels := make(prometheus.Labels)
+	if err := parseReleaseTag(metric, &infoLabels); err == nil {
+		createInfoMetric(&infoLabels, ch)
+		return nil
 	}
 
-	for i, line := range bytes.Split(body, []byte{'\n'}) {
-		// fmt.Printf("Line #%d is: %s\n", i, line)
-
-		metric := append(line, '\n')
-		// metric := line
-
-		// set instance and application_name  labels for all metrics
-		// set commonstatus_info metric and label wil application versions
-		fmt.Printf("Metric #%v is %s, byte: %v, len: %v", i, metric, metric, len(metric))
-
-		if isValidMetric(metric) {
-			// adding metric to the registry
-			fmt.Println("Added metric to the registry!")
-		} else {
-			fmt.Println("The metric is not valid, trying to fix it")
-			fixAndAddMetric(metric)
-		}
+	if err := convertLoadAvg(metric, ch); err == nil {
+		return nil
 	}
+
+	if err := convertNumberSeparators(metric, ch); err == nil {
+		return nil
+	}
+
+	if err := convertStartupTime(metric, ch); err == nil {
+		return nil
+	}
+
+	return fmt.Errorf("Can't convert metric: %s. No suitable conversion function found", metric)
 }
