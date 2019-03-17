@@ -19,6 +19,7 @@ var up = prometheus.NewDesc(
 )
 
 type CommonStatusExporter struct {
+	hostURL string
 }
 
 func isValidMetric(metric []byte) bool {
