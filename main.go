@@ -11,13 +11,15 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+var reg *prometheus.Registry
 var up = prometheus.NewGauge(prometheus.GaugeOpts{
 	Name: "application_host_up",
 	Help: "Was talking to the application successful.",
 })
 
 func init() {
-	prometheus.MustRegister(up)
+	reg = prometheus.NewRegistry()
+	reg.MustRegister(up)
 }
 
 type Metric struct {
@@ -84,7 +86,7 @@ func (e *Exporter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func main() {
 	e := &Exporter{
 		host:        os.Getenv("CS_SERVER"),
-		coreHandler: promhttp.Handler(),
+		coreHandler: promhttp.HandlerFor(reg, promhttp.HandlerOpts{}),
 		metrics:     make(map[string]Metric),
 	}
 
