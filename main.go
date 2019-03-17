@@ -1,78 +1,95 @@
 package main
 
 import (
-	"bytes"
-	"fmt"
-	"io/ioutil"
+	"bufio"
 	"log"
 	"net/http"
+	"os"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/prometheus/prometheus/util/promlint"
 )
 
-var up = prometheus.NewDesc(
-	"application_host_up",
-	"Was talking to the application successful.",
-	nil, nil,
-)
+var reg *prometheus.Registry
+var up = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "application_host_up",
+	Help: "Was talking to the application successful.",
+})
 
-type CommonStatusExporter struct {
+func init() {
+	reg = prometheus.NewRegistry()
+	reg.MustRegister(up)
 }
 
-func isValidMetric(metric []byte) bool {
-	l := promlint.New(bytes.NewReader(metric))
+type Metric struct {
+	m        prometheus.Metric
+	lastSeen time.Time
+}
 
-	if _, err := l.Lint(); err != nil {
-		return false
+type Exporter struct {
+	host string
+	// core prometheus handler
+	coreHandler http.Handler
+	// list of metrics from previous run
+	metrics map[string]Metric
+}
+
+func (e *Exporter) prepareMetrics() error {
+	// make request to backend. TODO - specify timeouts + retries if needed
+	resp, err := http.Get(e.host)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// set gauge vector with error codes or return some error
 	}
 
-	return true
+	// Wrap response body into buffered scanner. Set split function to scanLines
+	s := bufio.NewScanner(resp.Body)
+	s.Split(bufio.ScanLines)
+
+	timestamp := time.Now()
+	_ = timestamp
+
+	// iterate over lines
+	for s.Scan() {
+		log.Print(s.Text())
+		// convert metrics
+		// check if exist in metrics
+		//     - if yes - set it + lastSeen = timestamp
+		//     - if no - register and set + add to metrics
+	}
+	// check if errors occured during reading - e.g dropped connection or etc.
+	if err := s.Err(); err != nil {
+
+	}
+
+	// if for metrics that are in metrics but not right now - unregister and remove from map
+	return nil
 }
 
-// Implements prometheus.Collector.
-func (c CommonStatusExporter) Describe(ch chan<- *prometheus.Desc) {
-	ch <- up
-}
-
-// Implements prometheus.Collector.
-func (c CommonStatusExporter) Collect(ch chan<- prometheus.Metric) {
-	// response, err := http.Get("http://localhost:8080/status?detail=all")
-	// if (err != nil) || (response.StatusCode != 200) {
-	// 	ch <- prometheus.MustNewConstMetric(up, prometheus.GaugeValue, 0)
-	// 	return
-	// }
-
-	// body, err := ioutil.ReadAll(response.Body)
-	body, err := ioutil.ReadFile("valid_metrics.txt")
-	// response.Body.Close()
-
+func (e *Exporter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	err := e.prepareMetrics()
 	if err != nil {
-		fmt.Printf("ReadAll Error ocurred: %s", err)
-		ch <- prometheus.MustNewConstMetric(up, prometheus.GaugeValue, 0)
+		log.Print(err)
+		e.coreHandler.ServeHTTP(w, r) // serve anyway
 		return
 	}
-	ch <- prometheus.MustNewConstMetric(up, prometheus.GaugeValue, 1)
 
-	for _, line := range bytes.Split(body, []byte{'\n'}) {
-		if isValidMetric(line) {
-			// adding metric to the registry
-			fmt.Println("Added metric to the registry!")
-		} else {
-			fmt.Println("The metric is not valid, trying to convert it")
-			// fixAndAddMetric(metric)
-			err := convertMetric(line, ch)
-			if err != nil {
-				fmt.Printf("Failed to convert the metric: %s, error: %v\n", line, err)
-			}
-		}
-	}
+	up.Set(1) // mark exporter as working
+	e.coreHandler.ServeHTTP(w, r)
 }
 
 func main() {
-	c := CommonStatusExporter{}
-	prometheus.MustRegister(c)
-	http.Handle("/metrics", promhttp.Handler())
-	log.Fatal(http.ListenAndServe(":8000", nil))
+	e := &Exporter{
+		host:        os.Getenv("CS_SERVER"),
+		coreHandler: promhttp.HandlerFor(reg, promhttp.HandlerOpts{}),
+		metrics:     make(map[string]Metric),
+	}
+
+	http.Handle("/metrics", e)
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
