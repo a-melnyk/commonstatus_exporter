@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"io/ioutil"
 	"testing"
 	"time"
 
@@ -212,19 +210,19 @@ func TestCreateInfoMetric_ok(t *testing.T) {
 	}
 }
 
-func TestConvertMetric_ok(t *testing.T) {
-	assert := assert.New(t)
+// func TestConvertMetric_ok(t *testing.T) {
+// 	assert := assert.New(t)
 
-	validMetrics, _ := ioutil.ReadFile("valid_metrics.txt")
+// 	validMetrics, _ := ioutil.ReadFile("../docker/testservice/valid_metrics.txt")
 
-	for _, metric := range bytes.Split(validMetrics, []byte{'\n'}) {
-		ch := make(chan prometheus.Metric, 99)
-		defer close(ch)
+// 	for _, metric := range bytes.Split(validMetrics, []byte{'\n'}) {
+// 		ch := make(chan prometheus.Metric, 99)
+// 		defer close(ch)
 
-		err := convertMetric(metric, ch)
-		assert.NoError(err)
-		if err != nil {
-			return
-		}
-	}
-}
+// 		err := convertMetric(metric, ch)
+// 		assert.NoError(err)
+// 		if err != nil {
+// 			return
+// 		}
+// 	}
+// }

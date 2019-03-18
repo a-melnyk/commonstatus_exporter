@@ -1,95 +1,90 @@
 package main
 
 import (
-	"bufio"
+	"context"
 	"log"
 	"net/http"
-	"os"
+	"strconv"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-var reg *prometheus.Registry
-var up = prometheus.NewGauge(prometheus.GaugeOpts{
-	Name: "application_host_up",
-	Help: "Was talking to the application successful.",
-})
+var (
+	up = prometheus.NewDesc(
+		"consul_up",
+		"Was talking to Consul successful.",
+		nil, nil,
+	)
+)
 
-func init() {
-	reg = prometheus.NewRegistry()
-	reg.MustRegister(up)
+type CommonStatusExporter struct {
+	hostURL string
 }
 
-type Metric struct {
-	m        prometheus.Metric
-	lastSeen time.Time
+// Implements prometheus.Collector.
+func (c CommonStatusExporter) Describe(ch chan<- *prometheus.Desc) {
+	ch <- up
 }
 
-type Exporter struct {
-	host string
-	// core prometheus handler
-	coreHandler http.Handler
-	// list of metrics from previous run
-	metrics map[string]Metric
+func (c CommonStatusExporter) Collect(ch chan<- prometheus.Metric) {
+	floatHost, _ := strconv.ParseFloat(c.hostURL, 64)
+	ch <- prometheus.MustNewConstMetric(up, prometheus.GaugeValue, floatHost)
+
+	// scrape metrics from the hostURL and convert them using the convert package
 }
 
-func (e *Exporter) prepareMetrics() error {
-	// make request to backend. TODO - specify timeouts + retries if needed
-	resp, err := http.Get(e.host)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
+func probeHandler(w http.ResponseWriter, r *http.Request) {
+	timeoutSeconds := 10.0
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSeconds*float64(time.Second)))
+	defer cancel()
+	r = r.WithContext(ctx)
 
-	if resp.StatusCode != http.StatusOK {
-		// set gauge vector with error codes or return some error
-	}
+	probeSuccessGauge := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "probe_success",
+		Help: "Displays whether or not the probe was a success",
+	})
+	probeDurationGauge := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "probe_duration_seconds",
+		Help: "Returns how long the probe took to complete in seconds",
+	})
 
-	// Wrap response body into buffered scanner. Set split function to scanLines
-	s := bufio.NewScanner(resp.Body)
-	s.Split(bufio.ScanLines)
-
-	timestamp := time.Now()
-	_ = timestamp
-
-	// iterate over lines
-	for s.Scan() {
-		log.Print(s.Text())
-		// convert metrics
-		// check if exist in metrics
-		//     - if yes - set it + lastSeen = timestamp
-		//     - if no - register and set + add to metrics
-	}
-	// check if errors occured during reading - e.g dropped connection or etc.
-	if err := s.Err(); err != nil {
-
-	}
-
-	// if for metrics that are in metrics but not right now - unregister and remove from map
-	return nil
-}
-
-func (e *Exporter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	err := e.prepareMetrics()
-	if err != nil {
-		log.Print(err)
-		e.coreHandler.ServeHTTP(w, r) // serve anyway
+	params := r.URL.Query()
+	target := params.Get("target")
+	if target == "" {
+		http.Error(w, "Target parameter is missing", http.StatusBadRequest)
 		return
 	}
 
-	up.Set(1) // mark exporter as working
-	e.coreHandler.ServeHTTP(w, r)
+	// sl := newScrapeLogger(logger, moduleName, target)
+	// level.Info.Log("msg", "Beginning probe", "probe", module.Prober, "timeout_seconds", timeoutSeconds)
+
+	// start := time.Now()
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(probeSuccessGauge)
+	registry.MustRegister(probeDurationGauge)
+	c := CommonStatusExporter{
+		hostURL: target,
+	}
+	registry.MustRegister(c)
+
+	// duration := time.Since(start).Seconds()
+	// probeDurationGauge.Set(duration)
+	// if success {
+	// 	probeSuccessGauge.Set(1)
+	// 	level.Info(sl).Log("msg", "Probe succeeded", "duration_seconds", duration)
+	// } else {
+	// 	level.Error(sl).Log("msg", "Probe failed", "duration_seconds", duration)
+	// }
+	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
+	h.ServeHTTP(w, r)
 }
 
 func main() {
-	e := &Exporter{
-		host:        os.Getenv("CS_SERVER"),
-		coreHandler: promhttp.HandlerFor(reg, promhttp.HandlerOpts{}),
-		metrics:     make(map[string]Metric),
-	}
-
-	http.Handle("/metrics", e)
+	http.HandleFunc("/probe", func(w http.ResponseWriter, r *http.Request) {
+		probeHandler(w, r)
+	})
+	http.Handle("/metrics", promhttp.Handler())
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }

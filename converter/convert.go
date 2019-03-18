@@ -10,8 +10,20 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+var (
+	invalidChars         = regexp.MustCompile(`[^a-zA-Z0-9:_]`)
+	loadAvg              = regexp.MustCompile(`^LoadAvg: (?P<la1m>\d+(\.\d+)?) (?P<la5m>\d+(\.\d+)?) (?P<la15m>\d+(\.\d+)?)$`)
+	numbericValue        = regexp.MustCompile(`^([a-zA-Z_:]([a-zA-Z0-9_:])*): ([0-9]+([0-9,.])*[0-9]*)$`)
+	commaSeparator       = regexp.MustCompile(`^[0-9]([0-9,])+[0-9]$`)
+	pointSeparator       = regexp.MustCompile(`^[0-9]+(\.[0-9]+){2,}$`)
+	pointCommaSeparators = regexp.MustCompile(`^[0-9]+(.[0-9]+)+,[0-9]+$`)
+	commaPointSeparators = regexp.MustCompile(`^[0-9]+(,[0-9]+)+.[0-9]+$`)
+	validMetric          = regexp.MustCompile(`^([a-zA-Z_:]([a-zA-Z0-9_:])*): .*$`)
+	startupTime          = regexp.MustCompile(`^StartupTime: (.*)$`)
+	releaseTag           = regexp.MustCompile(`^ReleaseTag: (.*)$`)
+)
+
 func createPrometheusMetric(name string, desc string, value string, metricType prometheus.ValueType) (prometheus.Metric, error) {
-	invalidChars := regexp.MustCompile("[^a-zA-Z0-9:_]")
 	name = invalidChars.ReplaceAllLiteralString(name, "_")
 
 	promDesc := prometheus.NewDesc(name, desc, nil, nil)
@@ -26,13 +38,11 @@ func createPrometheusMetric(name string, desc string, value string, metricType p
 }
 
 func convertLoadAvg(metric []byte, ch chan<- prometheus.Metric) error {
-	re := regexp.MustCompile(`^LoadAvg: (?P<la1m>\d+(\.\d+)?) (?P<la5m>\d+(\.\d+)?) (?P<la15m>\d+(\.\d+)?)$`)
-
-	if !(re.Match(metric)) {
+	if !(loadAvg.Match(metric)) {
 		return fmt.Errorf("no LoadAvg metric found in: %s", metric)
 	}
 
-	matchResult := re.FindSubmatch(metric)
+	matchResult := loadAvg.FindSubmatch(metric)
 
 	la1Metric, err := createPrometheusMetric("load_avertage1", "1m load average.", string(matchResult[1]), prometheus.GaugeValue)
 	if err != nil {
@@ -57,22 +67,18 @@ func convertLoadAvg(metric []byte, ch chan<- prometheus.Metric) error {
 }
 
 func convertNumberSeparators(metric []byte, ch chan<- prometheus.Metric) error {
-	re := regexp.MustCompile(`^([a-zA-Z_:]([a-zA-Z0-9_:])*): ([0-9]+([0-9,.])*[0-9]*)$`)
-
-	if !(re.Match(metric)) {
+	if !(numbericValue.Match(metric)) {
 		return fmt.Errorf("no metric with numberic value found in: %s", metric)
 	}
 
-	name := re.FindSubmatch(metric)[1]
-	value := re.FindSubmatch(metric)[3]
+	name := numbericValue.FindSubmatch(metric)[1]
+	value := numbericValue.FindSubmatch(metric)[3]
 
-	re = regexp.MustCompile(`^[0-9]([0-9,])+[0-9]$`)
-	if re.Match(value) {
+	if commaSeparator.Match(value) {
 		value = bytes.Replace(value, []byte(","), []byte("."), -1)
 	}
 
-	re = regexp.MustCompile(`^[0-9]+(\.[0-9]+){2,}$`)
-	if re.Match(value) {
+	if pointSeparator.Match(value) {
 		resultValue := bytes.Replace(value, []byte("."), []byte(""), -1)
 		promMetric, err := createPrometheusMetric(string(name), "", string(resultValue), prometheus.GaugeValue)
 		if err != nil {
@@ -82,8 +88,7 @@ func convertNumberSeparators(metric []byte, ch chan<- prometheus.Metric) error {
 		return nil
 	}
 
-	re = regexp.MustCompile(`^[0-9]+(.[0-9]+)+,[0-9]+$`)
-	if re.Match(value) {
+	if pointCommaSeparators.Match(value) {
 		value = bytes.Replace(value, []byte("."), []byte(""), -1)
 		value = bytes.Replace(value, []byte(","), []byte("."), -1)
 		promMetric, err := createPrometheusMetric(string(name), "", string(value), prometheus.GaugeValue)
@@ -94,8 +99,7 @@ func convertNumberSeparators(metric []byte, ch chan<- prometheus.Metric) error {
 		return nil
 	}
 
-	re = regexp.MustCompile(`^[0-9]+(,[0-9]+)+.[0-9]+$`)
-	if re.Match(value) {
+	if commaPointSeparators.Match(value) {
 		value = bytes.Replace(value, []byte(","), []byte(""), -1)
 		promMetric, err := createPrometheusMetric(string(name), "", string(value), prometheus.GaugeValue)
 		if err != nil {
@@ -114,13 +118,11 @@ func convertNumberSeparators(metric []byte, ch chan<- prometheus.Metric) error {
 }
 
 func convertStartupTime(metric []byte, ch chan<- prometheus.Metric) error {
-	re := regexp.MustCompile(`^StartupTime: (.*)$`)
-
-	if !(re.Match(metric)) {
+	if !(startupTime.Match(metric)) {
 		return fmt.Errorf("no metric with numberic value found in: %s", metric)
 	}
 
-	value := re.FindSubmatch(metric)[1]
+	value := startupTime.FindSubmatch(metric)[1]
 
 	parsedTime, err := time.Parse(time.UnixDate, string(value))
 	if err != nil {
@@ -136,14 +138,12 @@ func convertStartupTime(metric []byte, ch chan<- prometheus.Metric) error {
 }
 
 func parseReleaseTag(metric []byte, infoLabels *prometheus.Labels) error {
-	re := regexp.MustCompile(`^ReleaseTag: (.*)$`)
-
-	if !re.Match(metric) {
+	if !releaseTag.Match(metric) {
 		return fmt.Errorf("the metric doesn't contain a ReleaseTag: %s", metric)
 	}
 
-	releaseTag := string(re.FindSubmatch(metric)[1])
-	(*infoLabels)["release_tag"] = releaseTag
+	releaseTagValue := string(releaseTag.FindSubmatch(metric)[1])
+	(*infoLabels)["release_tag"] = releaseTagValue
 
 	return nil
 }
@@ -165,8 +165,7 @@ func convertMethodRunTime(metric []byte) {
 
 // convertMetric converts []byte line into a prometheusMetric
 func convertMetric(metric []byte, ch chan<- prometheus.Metric) error {
-	re := regexp.MustCompile(`^([a-zA-Z_:]([a-zA-Z0-9_:])*): .*$`)
-	if !re.Match(metric) {
+	if !validMetric.Match(metric) {
 		return fmt.Errorf("the string doesn't contain a valid metric: %s", metric)
 	}
 
