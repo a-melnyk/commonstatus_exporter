@@ -13,7 +13,7 @@ func TestConvertLoadAvg_ok(t *testing.T) {
 	assert := assert.New(t)
 
 	// GIVEN
-	input := []byte("LoadAvg: 1.94 3.44 5.07")
+	input := "LoadAvg: 1.94 3.44 5.07"
 
 	la1Desc := prometheus.NewDesc("load_avertage1", "1m load average.", nil, nil)
 	la1Metric := prometheus.MustNewConstMetric(la1Desc, prometheus.GaugeValue, float64(1.94))
@@ -61,7 +61,7 @@ func TestConvertLoadAvg_invalidInput(t *testing.T) {
 	assert := assert.New(t)
 
 	// GIVEN
-	invalidInput := []byte("LoadAvg: 1.94 3.44 5,07")
+	invalidInput := "LoadAvg: 1.94 3.44 5,07"
 
 	ch := make(chan prometheus.Metric)
 	defer close(ch)
@@ -76,19 +76,19 @@ func TestConvertLoadAvg_invalidInput(t *testing.T) {
 func TestConvertNumberSeparators_ok(t *testing.T) {
 	assert := assert.New(t)
 	type testpair struct {
-		metric []byte
+		metric string
 		result float64
 	}
 
 	var tests = []testpair{
-		{[]byte("MemoryUsed: 9,220,838,392"), 9220838392},
-		{[]byte("MemoryUsed: 9.220.838.392"), 9220838392},
-		{[]byte("MemoryUsed: 9220838392,01"), 9220838392.01},
-		{[]byte("MemoryUsed: 9,220,838,392.01"), 9220838392.01},
-		{[]byte("MemoryUsed: 9.220.838.392,01"), 9220838392.01},
-		{[]byte("MemoryUsed: 4.997,14"), 4997.14},
-		{[]byte("MemoryUsed: 4,997.14"), 4997.14},
-		{[]byte("MemoryUsed: 0"), 0},
+		{"MemoryUsed: 9,220,838,392", 9220838392},
+		{"MemoryUsed: 9.220.838.392", 9220838392},
+		{"MemoryUsed: 9220838392,01", 9220838392.01},
+		{"MemoryUsed: 9,220,838,392.01", 9220838392.01},
+		{"MemoryUsed: 9.220.838.392,01", 9220838392.01},
+		{"MemoryUsed: 4.997,14", 4997.14},
+		{"MemoryUsed: 4,997.14", 4997.14},
+		{"MemoryUsed: 0", 0},
 	}
 
 	for _, test := range tests {
@@ -119,14 +119,14 @@ func TestConvertNumberSeparators_ok(t *testing.T) {
 func TestConvertStartupTime_ok(t *testing.T) {
 	assert := assert.New(t)
 	type testpair struct {
-		metric    []byte
+		metric    string
 		timestamp int64
 	}
 
 	var tests = []testpair{
-		{[]byte("StartupTime: Mon Jan 28 14:24:03 CET 2019"), 1548681843},
-		{[]byte("StartupTime: Tue Jan 01 14:24:00 CET 2019"), 1546349040},
-		{[]byte("StartupTime: Tue Jan 01 14:24:00 GMT 2019"), 1546352640},
+		{"StartupTime: Mon Jan 28 14:24:03 CET 2019", 1548681843},
+		{"StartupTime: Tue Jan 01 14:24:00 CET 2019", 1546349040},
+		{"StartupTime: Tue Jan 01 14:24:00 GMT 2019", 1546352640},
 	}
 
 	for _, test := range tests {
@@ -159,14 +159,14 @@ func TestConvertStartupTime_ok(t *testing.T) {
 func TestParseReleaseTag_ok(t *testing.T) {
 	assert := assert.New(t)
 	type testpair struct {
-		metric []byte
+		metric string
 		want   prometheus.Labels
 	}
 
 	var tests = []testpair{
-		{[]byte("ReleaseTag: catalog.deployment.server-release-2019-01-21-A"), prometheus.Labels{"release_tag": "catalog.deployment.server-release-2019-01-21-A"}},
-		{[]byte("ReleaseTag: DEV-ITD_123-bla-test"), prometheus.Labels{"release_tag": "DEV-ITD_123-bla-test"}},
-		{[]byte("ReleaseTag: 0.0.32"), prometheus.Labels{"release_tag": "0.0.32"}},
+		{"ReleaseTag: catalog.deployment.server-release-2019-01-21-A", prometheus.Labels{"release_tag": "catalog.deployment.server-release-2019-01-21-A"}},
+		{"ReleaseTag: DEV-ITD_123-bla-test", prometheus.Labels{"release_tag": "DEV-ITD_123-bla-test"}},
+		{"ReleaseTag: 0.0.32", prometheus.Labels{"release_tag": "0.0.32"}},
 	}
 
 	for _, test := range tests {
