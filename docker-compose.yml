@@ -33,6 +33,8 @@ services:
       context: ./docker/testservice
     expose:
       - 8081
+    ports:
+      - 8081:8081 
 
 
 volumes:
