@@ -10,6 +10,15 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+type MetricType int
+
+const (
+	LoadAvg MetricType = iota
+	StartupTime
+	ReleaseTag
+	Other
+)
+
 var (
 	invalidChars         = regexp.MustCompile(`[^a-zA-Z0-9:_]`)
 	loadAvg              = regexp.MustCompile(`^LoadAvg: (?P<la1m>\d+(\.\d+)?) (?P<la5m>\d+(\.\d+)?) (?P<la15m>\d+(\.\d+)?)$`)
@@ -163,29 +172,41 @@ func convertMethodRunTime(metric string) {
 	}
 }
 
-// convertMetric converts []byte line into a prometheusMetric
+func metricType(metric string) MetricType {
+	if releaseTag.MatchString(metric) {
+		return ReleaseTag
+	}
+
+	if loadAvg.MatchString(metric) {
+		return LoadAvg
+	}
+
+	if startupTime.MatchString(metric) {
+		return StartupTime
+	}
+
+	return Other
+}
+
 func convertMetric(metric string, ch chan<- prometheus.Metric) error {
 	if !validMetric.MatchString(metric) {
 		return fmt.Errorf("the string doesn't contain a valid metric: %s", metric)
 	}
 
-	infoLabels := make(prometheus.Labels)
-	if err := parseReleaseTag(metric, &infoLabels); err == nil {
+	switch metricType(metric) {
+	case ReleaseTag:
+		infoLabels := make(prometheus.Labels)
+		if err := parseReleaseTag(metric, &infoLabels); err != nil {
+			return err
+		}
 		createInfoMetric(&infoLabels, ch)
-		return nil
+	case LoadAvg:
+		return convertLoadAvg(metric, ch)
+	case StartupTime:
+		return convertStartupTime(metric, ch)
+	default:
+		return convertNumberSeparators(metric, ch)
 	}
 
-	if err := convertLoadAvg(metric, ch); err == nil {
-		return nil
-	}
-
-	if err := convertNumberSeparators(metric, ch); err == nil {
-		return nil
-	}
-
-	if err := convertStartupTime(metric, ch); err == nil {
-		return nil
-	}
-
-	return fmt.Errorf("Can't convert metric: %s. No suitable conversion function found", metric)
+	return nil
 }
