@@ -31,7 +31,7 @@ var (
 		Help: "Displays count of failed probes",
 	})
 	probeDurationCount = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "probe_duration_seconds",
+		Name: "probe_seconds_total",
 		Help: "Displays total duration of all probes",
 	})
 )
@@ -168,6 +168,7 @@ func main() {
 	// TODO: log levels
 	prometheus.MustRegister(probeSuccessCount)
 	prometheus.MustRegister(probeFailureCount)
+	prometheus.MustRegister(probeDurationCount)
 
 	http.HandleFunc("/probe", func(w http.ResponseWriter, r *http.Request) {
 		probeHandler(w, r)
