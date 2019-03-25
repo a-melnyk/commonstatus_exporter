@@ -16,34 +16,42 @@ const (
 	LoadAvg MetricType = iota
 	StartupTime
 	ReleaseTag
+	RunningAverages
 	Other
 )
 
 var (
-	invalidChars         = regexp.MustCompile(`[^a-zA-Z0-9:_]`)
-	loadAvg              = regexp.MustCompile(`^LoadAvg: (?P<la1m>\d+(\.\d+)?) (?P<la5m>\d+(\.\d+)?) (?P<la15m>\d+(\.\d+)?)$`)
-	numbericValue        = regexp.MustCompile(`^([a-zA-Z_:]([a-zA-Z0-9_:])*): ([0-9]+([0-9,.])*[0-9]*)$`)
-	commaSeparator       = regexp.MustCompile(`^[0-9]([0-9,])+[0-9]$`)
-	pointSeparator       = regexp.MustCompile(`^[0-9]+(\.[0-9]+){2,}$`)
-	pointCommaSeparators = regexp.MustCompile(`^[0-9]+(.[0-9]+)+,[0-9]+$`)
-	commaPointSeparators = regexp.MustCompile(`^[0-9]+(,[0-9]+)+.[0-9]+$`)
-	validMetric          = regexp.MustCompile(`^([a-zA-Z_:]([a-zA-Z0-9_:])*): .*$`)
-	startupTime          = regexp.MustCompile(`^StartupTime: (.*)$`)
-	releaseTag           = regexp.MustCompile(`^ReleaseTag: (.*)$`)
+	invalidChars    = regexp.MustCompile(`[^a-zA-Z0-9:_]`)
+	loadAvg         = regexp.MustCompile(`^LoadAvg: (?P<la1m>\d+(\.\d+)?) (?P<la5m>\d+(\.\d+)?) (?P<la15m>\d+(\.\d+)?)$`)
+	numbericValue   = regexp.MustCompile(`^([0-9]+[0-9,.]*[0-9]*)$`)
+	metricTemplate  = regexp.MustCompile(`^([a-zA-Z_:].*): (.*)$`)
+	startupTime     = regexp.MustCompile(`^StartupTime: (.*)$`)
+	releaseTag      = regexp.MustCompile(`^ReleaseTag: (.*)$`)
+	runningAverages = regexp.MustCompile(`^(.+): count=([0-9]+[0-9,.]*) averageValue=([0-9]+[0-9,.]*) realMaxValue=([0-9]+[0-9,.]*) averageEventRate=[0-9]+[0-9,.]* maxEventRate=[0-9]+[0-9,.]* stdDeviation=([0-9]+[0-9,.]*) maxValue=[0-9]+[0-9,.]*$`)
 )
 
-func createPrometheusMetric(name string, desc string, value string, metricType prometheus.ValueType) (prometheus.Metric, error) {
-	name = invalidChars.ReplaceAllLiteralString(name, "_")
-
-	promDesc := prometheus.NewDesc(name, desc, nil, nil)
-
-	floatValue, err := strconv.ParseFloat(value, 64)
-	if err != nil {
-		return nil, fmt.Errorf("can't parse: %v to float", value)
+func parseValue(value string) (float64, error) {
+	if !(numbericValue.MatchString(value)) {
+		return 0, fmt.Errorf("can't parse metric, invalid value: %s", value)
 	}
 
-	metric := prometheus.MustNewConstMetric(promDesc, metricType, floatValue)
+	value = strings.Replace(value, ",", "", -1)
+	return strconv.ParseFloat(value, 64)
+}
+
+func createPrometheusMetric(name string, desc string, value float64, metricType prometheus.ValueType) (prometheus.Metric, error) {
+	name = invalidChars.ReplaceAllLiteralString(name, "_")
+	promDesc := prometheus.NewDesc(name, desc, nil, nil)
+	metric := prometheus.MustNewConstMetric(promDesc, metricType, value)
 	return metric, nil
+}
+
+func convertAndCreatePrometheusMetric(name string, desc string, value string, metricType prometheus.ValueType) (prometheus.Metric, error) {
+	parsedValue, err := parseValue(value)
+	if err != nil {
+		return nil, err
+	}
+	return createPrometheusMetric(name, desc, parsedValue, metricType)
 }
 
 func convertLoadAvg(metric string, ch chan<- prometheus.Metric) error {
@@ -53,17 +61,17 @@ func convertLoadAvg(metric string, ch chan<- prometheus.Metric) error {
 
 	matchResult := loadAvg.FindStringSubmatch(metric)
 
-	la1Metric, err := createPrometheusMetric("load_avertage1", "1m load average.", string(matchResult[1]), prometheus.GaugeValue)
+	la1Metric, err := convertAndCreatePrometheusMetric("load_avertage1", "1m load average.", matchResult[1], prometheus.GaugeValue)
 	if err != nil {
 		return err
 	}
 
-	la5Metric, err := createPrometheusMetric("load_avertage5", "5m load average.", string(matchResult[3]), prometheus.GaugeValue)
+	la5Metric, err := convertAndCreatePrometheusMetric("load_avertage5", "5m load average.", matchResult[3], prometheus.GaugeValue)
 	if err != nil {
 		return err
 	}
 
-	la15Metric, err := createPrometheusMetric("load_avertage15", "15m load average.", string(matchResult[5]), prometheus.GaugeValue)
+	la15Metric, err := convertAndCreatePrometheusMetric("load_avertage15", "15m load average.", matchResult[5], prometheus.GaugeValue)
 	if err != nil {
 		return err
 	}
@@ -75,57 +83,6 @@ func convertLoadAvg(metric string, ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-func convertNumberSeparators(metric string, ch chan<- prometheus.Metric) error {
-	if !(numbericValue.MatchString(metric)) {
-		return fmt.Errorf("no metric with numberic value found in: %s", metric)
-	}
-
-	name := numbericValue.FindStringSubmatch(metric)[1]
-	value := numbericValue.FindStringSubmatch(metric)[3]
-
-	if commaSeparator.MatchString(value) {
-		value = strings.Replace(value, ",", ".", -1)
-	}
-
-	if pointSeparator.MatchString(value) {
-		resultValue := strings.Replace(value, ".", "", -1)
-		promMetric, err := createPrometheusMetric(string(name), "", string(resultValue), prometheus.GaugeValue)
-		if err != nil {
-			return err
-		}
-		ch <- promMetric
-		return nil
-	}
-
-	if pointCommaSeparators.MatchString(value) {
-		value = strings.Replace(value, ".", "", -1)
-		value = strings.Replace(value, ",", ".", -1)
-		promMetric, err := createPrometheusMetric(string(name), "", string(value), prometheus.GaugeValue)
-		if err != nil {
-			return err
-		}
-		ch <- promMetric
-		return nil
-	}
-
-	if commaPointSeparators.MatchString(value) {
-		value = strings.Replace(value, ",", "", -1)
-		promMetric, err := createPrometheusMetric(string(name), "", string(value), prometheus.GaugeValue)
-		if err != nil {
-			return err
-		}
-		ch <- promMetric
-		return nil
-	}
-
-	promMetric, err := createPrometheusMetric(string(name), "", string(value), prometheus.GaugeValue)
-	if err != nil {
-		return err
-	}
-	ch <- promMetric
-	return nil
-}
-
 func convertStartupTime(metric string, ch chan<- prometheus.Metric) error {
 	if !(startupTime.MatchString(metric)) {
 		return fmt.Errorf("no metric with numberic value found in: %s", metric)
@@ -133,7 +90,7 @@ func convertStartupTime(metric string, ch chan<- prometheus.Metric) error {
 
 	value := startupTime.FindStringSubmatch(metric)[1]
 
-	parsedTime, err := time.Parse(time.UnixDate, string(value))
+	parsedTime, err := time.Parse(time.UnixDate, value)
 	if err != nil {
 		return err
 	}
@@ -147,29 +104,97 @@ func convertStartupTime(metric string, ch chan<- prometheus.Metric) error {
 }
 
 func parseReleaseTag(metric string, infoLabels *prometheus.Labels) error {
-	if !releaseTag.MatchString(metric) {
-		return fmt.Errorf("the metric doesn't contain a ReleaseTag: %s", metric)
-	}
-
-	releaseTagValue := string(releaseTag.FindStringSubmatch(metric)[1])
+	releaseTagValue := releaseTag.FindStringSubmatch(metric)[1]
+	// TODO: create the label here and return it
 	(*infoLabels)["release_tag"] = releaseTagValue
 
 	return nil
 }
 
-func createInfoMetric(infoLabels *prometheus.Labels, ch chan<- prometheus.Metric) {
-	promDesc := prometheus.NewDesc("commonstatus_info", "commonstatus information", nil, *infoLabels)
+func createInfoMetric(infoLabels *prometheus.Labels, ch chan<- prometheus.Metric) error {
+	// TODO: move parseReleaseTag here
+	promDesc := prometheus.NewDesc("commonstatus_info", "CommonStatus information", nil, *infoLabels)
 	promMetric := prometheus.MustNewConstMetric(promDesc, prometheus.GaugeValue, float64(1))
 
 	ch <- promMetric
+
+	return nil
 }
 
-func convertMethodRunTime(metric string) {
-	// TODO: create function
-	// process MethodRunTime_ metric and add prom metrics to the registry
-	if match, err := regexp.MatchString("^MethodRunTime_", metric); match && err == nil {
-		// continue
+func convertRunningAverages(metric string, ch chan<- prometheus.Metric) error {
+	if !runningAverages.MatchString(metric) {
+		return fmt.Errorf("the metric doesn't contain a RunningAverages: %s", metric)
 	}
+
+	/*
+		TimeSearch:
+		count=77 -> creating Prometheus metric TimeSearch_total
+		averageValue=275 -> creating Prometheus metric TimeSearch_seconds_total: count*averageValue/1000
+		realMaxValue=2,784 -> creating Prometheus metric TimeSearch_max_seconds: realMaxValue/1000
+		averageEventRate=1.283 -> dropping, use Prometheus rate() instead
+		maxEventRate=3 -> dropping, use Prometheus rate() instead + max_over_time()
+		stdDeviation=409 -> creating Prometheus metric TimeSearch_stddev_seconds: stdDeviation/1000
+		maxValue=684 (-)  -> dropping, use avg + stddev instead
+	*/
+	matchResult := runningAverages.FindStringSubmatch(metric)
+
+	metricName := matchResult[1]
+	count, err := parseValue(matchResult[2])
+	if err != nil {
+		return err
+	}
+	averageValue, err := parseValue(matchResult[3])
+	if err != nil {
+		return err
+	}
+	realMaxValue, err := parseValue(matchResult[4])
+	if err != nil {
+		return err
+	}
+	stdDeviation, err := parseValue(matchResult[5])
+	if err != nil {
+		return err
+	}
+
+	total, err := createPrometheusMetric(metricName+"_total", "Total number of "+metricName+" requests", count, prometheus.CounterValue)
+	if err != nil {
+		return err
+	}
+
+	secondsTotal, err := createPrometheusMetric(metricName+"_seconds_total", "Total duration of "+metricName+" requests", count*averageValue/1000, prometheus.CounterValue)
+	if err != nil {
+		return err
+	}
+
+	maxSeconds, err := createPrometheusMetric(metricName+"_max_seconds", "Maximal duration of "+metricName+" request", realMaxValue/1000, prometheus.GaugeValue)
+	if err != nil {
+		return err
+	}
+
+	stddevSeconds, err := createPrometheusMetric(metricName+"_stddev_seconds", "Standart deviation of "+metricName+" duration", stdDeviation/1000, prometheus.GaugeValue)
+	if err != nil {
+		return err
+	}
+
+	ch <- total
+	ch <- secondsTotal
+	ch <- maxSeconds
+	ch <- stddevSeconds
+
+	return nil
+}
+
+func defaultMetricsConverter(metric string, ch chan<- prometheus.Metric) error {
+	matchResult := metricTemplate.FindStringSubmatch(metric)
+	name := matchResult[1]
+	value := matchResult[2]
+
+	promMetric, err := convertAndCreatePrometheusMetric(name, "", value, prometheus.UntypedValue)
+	if err != nil {
+		return err
+	}
+	ch <- promMetric
+	return nil
 }
 
 func metricType(metric string) MetricType {
@@ -185,11 +210,15 @@ func metricType(metric string) MetricType {
 		return StartupTime
 	}
 
+	if runningAverages.MatchString(metric) {
+		return RunningAverages
+	}
+
 	return Other
 }
 
 func convertMetric(metric string, ch chan<- prometheus.Metric) error {
-	if !validMetric.MatchString(metric) {
+	if !metricTemplate.MatchString(metric) {
 		return fmt.Errorf("the string doesn't contain a valid metric: %s", metric)
 	}
 
@@ -199,14 +228,16 @@ func convertMetric(metric string, ch chan<- prometheus.Metric) error {
 		if err := parseReleaseTag(metric, &infoLabels); err != nil {
 			return err
 		}
-		createInfoMetric(&infoLabels, ch)
+		return createInfoMetric(&infoLabels, ch)
 	case LoadAvg:
 		return convertLoadAvg(metric, ch)
 	case StartupTime:
 		return convertStartupTime(metric, ch)
+	case RunningAverages:
+		return convertRunningAverages(metric, ch)
 	default:
-		return convertNumberSeparators(metric, ch)
+		return defaultMetricsConverter(metric, ch)
 	}
 
-	return nil
+	return fmt.Errorf("can't convert metric: %s", metric)
 }

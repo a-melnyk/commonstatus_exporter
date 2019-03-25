@@ -64,6 +64,7 @@ func (c CommonStatusExporter) Describe(ch chan<- *prometheus.Desc) {
 
 // Implements prometheus.Collector.
 func (c CommonStatusExporter) Collect(ch chan<- prometheus.Metric) {
+	// TODO: check if we have configured timeout
 	resp, err := http.Get(c.hostURL)
 	if err != nil {
 		log.Printf("Error during http get request, err: %v", err)
@@ -87,6 +88,7 @@ func (c CommonStatusExporter) Collect(ch chan<- prometheus.Metric) {
 	for s.Scan() {
 		metric := s.Text()
 		log.Printf("Received metric: %v", metric)
+		// TODO: move all this section to convert?
 		if isValidMetric(metric) && len(metric) > 0 {
 			name := metricPattern.FindStringSubmatch(metric)[1]
 			value := metricPattern.FindStringSubmatch(metric)[3]
@@ -97,7 +99,7 @@ func (c CommonStatusExporter) Collect(ch chan<- prometheus.Metric) {
 				continue
 			}
 			desc := prometheus.NewDesc(name, "", nil, nil)
-			ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, floatValue)
+			ch <- prometheus.MustNewConstMetric(desc, prometheus.UntypedValue, floatValue)
 
 			converted++
 			log.Println("Added metric to the registry!")
@@ -117,12 +119,6 @@ func (c CommonStatusExporter) Collect(ch chan<- prometheus.Metric) {
 		}
 	}
 
-	// check if errors ocurred during reading - e.g dropped connection or etc.
-	if err := s.Err(); err != nil {
-		log.Printf("error ocurred during the response body reading, err: %v", err)
-		c.probeFailure(ch)
-	}
-
 	convertedMetricsGauge := prometheus.NewDesc("converted_metrics", "The number of CommonStatus metrics converted to prometheus metrics", nil, nil)
 	ch <- prometheus.MustNewConstMetric(convertedMetricsGauge, prometheus.GaugeValue, converted)
 	failedMetricsGauge := prometheus.NewDesc("failed_metrics", "The number of CommonStatus metrics failed to convert to prometheus metrics", nil, nil)
@@ -131,9 +127,17 @@ func (c CommonStatusExporter) Collect(ch chan<- prometheus.Metric) {
 	duration := time.Since(c.startTime).Seconds()
 	probeDurationGauge := prometheus.NewDesc("probe_duration_seconds", "Duration of the probe in seconds", nil, nil)
 	ch <- prometheus.MustNewConstMetric(probeDurationGauge, prometheus.GaugeValue, duration)
-	ch <- prometheus.MustNewConstMetric(up, prometheus.GaugeValue, 1)
-	probeSuccessCount.Inc()
+
+	// check if errors ocurred during reading - e.g dropped connection or etc.
+	if err := s.Err(); err != nil {
+		log.Printf("error ocurred during the response body reading, err: %v", err)
+		c.probeFailure(ch)
+		return
+	}
+
 	probeDurationCount.Add(duration)
+	probeSuccessCount.Inc()
+	ch <- prometheus.MustNewConstMetric(up, prometheus.GaugeValue, 1)
 	log.Printf("probe succeeded, duration: %v", duration)
 }
 
@@ -144,8 +148,8 @@ func probeHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	r = r.WithContext(ctx)
 
-	params := r.URL.Query()
-	target := params.Get("target")
+	// TODO: treat all query string as target with all params
+	target := r.URL.Query().Get("target")
 	if target == "" {
 		http.Error(w, "Target parameter is missing", http.StatusBadRequest)
 		probeFailureCount.Inc()
@@ -175,5 +179,6 @@ func main() {
 	})
 	http.Handle("/metrics", promhttp.Handler())
 
+	// TODO: config option + file to choose port on which the exporter runs
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
