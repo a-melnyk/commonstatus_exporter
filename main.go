@@ -41,6 +41,12 @@ type CommonStatusExporter struct {
 	startTime time.Time
 }
 
+func init() {
+	prometheus.MustRegister(probeSuccessCount)
+	prometheus.MustRegister(probeFailureCount)
+	prometheus.MustRegister(probeDurationCount)
+}
+
 func isValidMetric(metric string) bool {
 	l := promlint.New(strings.NewReader(metric + "\n"))
 
@@ -170,10 +176,6 @@ func probeHandler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	// TODO: log levels
-	prometheus.MustRegister(probeSuccessCount)
-	prometheus.MustRegister(probeFailureCount)
-	prometheus.MustRegister(probeDurationCount)
-
 	http.HandleFunc("/probe", func(w http.ResponseWriter, r *http.Request) {
 		probeHandler(w, r)
 	})
