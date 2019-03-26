@@ -5,6 +5,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -47,13 +48,18 @@ func init() {
 	prometheus.MustRegister(probeDurationCount)
 }
 
+func getEnv(key, fallback string) string {
+	if value, ok := os.LookupEnv(key); ok {
+		return value
+	}
+	return fallback
+}
+
 func isValidMetric(metric string) bool {
 	l := promlint.New(strings.NewReader(metric + "\n"))
-
 	if _, err := l.Lint(); err != nil {
 		return false
 	}
-
 	return true
 }
 
@@ -181,6 +187,6 @@ func main() {
 	})
 	http.Handle("/metrics", promhttp.Handler())
 
-	// TODO: config option + file to choose port on which the exporter runs
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	port := getEnv("COMMONSTATUS_EXPORTER_PORT", "9259")
+	log.Fatal(http.ListenAndServe(":"+port, nil))
 }

@@ -103,17 +103,15 @@ func convertStartupTime(metric string, ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-func parseReleaseTag(metric string, infoLabels *prometheus.Labels) error {
-	releaseTagValue := releaseTag.FindStringSubmatch(metric)[1]
-	// TODO: create the label here and return it
-	(*infoLabels)["release_tag"] = releaseTagValue
+func createInfoMetric(metric string, ch chan<- prometheus.Metric) error {
+	if !releaseTag.MatchString(metric) {
+		return fmt.Errorf("the metric doesn't contain a ReleaseTag: %s", metric)
+	}
 
-	return nil
-}
-
-func createInfoMetric(infoLabels *prometheus.Labels, ch chan<- prometheus.Metric) error {
-	// TODO: move parseReleaseTag here
-	promDesc := prometheus.NewDesc("commonstatus_info", "CommonStatus information", nil, *infoLabels)
+	infoLabels := prometheus.Labels{
+		"release_tag": releaseTag.FindStringSubmatch(metric)[1],
+	}
+	promDesc := prometheus.NewDesc("commonstatus_info", "CommonStatus information", nil, infoLabels)
 	promMetric := prometheus.MustNewConstMetric(promDesc, prometheus.GaugeValue, float64(1))
 
 	ch <- promMetric
@@ -224,11 +222,7 @@ func convertMetric(metric string, ch chan<- prometheus.Metric) error {
 
 	switch metricType(metric) {
 	case ReleaseTag:
-		infoLabels := make(prometheus.Labels)
-		if err := parseReleaseTag(metric, &infoLabels); err != nil {
-			return err
-		}
-		return createInfoMetric(&infoLabels, ch)
+		return createInfoMetric(metric, ch)
 	case LoadAvg:
 		return convertLoadAvg(metric, ch)
 	case StartupTime:

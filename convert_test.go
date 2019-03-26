@@ -130,8 +130,9 @@ func TestConvertStartupTime_ok(t *testing.T) {
 	}
 }
 
-func TestParseReleaseTag_ok(t *testing.T) {
+func TestCreateInfoMetric_ok(t *testing.T) {
 	assert := assert.New(t)
+
 	type testpair struct {
 		metric string
 		want   prometheus.Labels
@@ -144,31 +145,10 @@ func TestParseReleaseTag_ok(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		infoLabels := make(prometheus.Labels)
-
-		err := parseReleaseTag(test.metric, &infoLabels)
-		assert.NoError(err)
-		if err != nil {
-			return
-		}
-
-		assert.Equal(test.want, infoLabels, "the infoLabel is wrong! Wanted: %v, got: %v, metric: %s", test.want, infoLabels, test.metric)
-	}
-}
-
-func TestCreateInfoMetric_ok(t *testing.T) {
-	assert := assert.New(t)
-
-	tests := []prometheus.Labels{
-		prometheus.Labels{"release_tag": "DEV-ITD_123-bla-test", "branch": "HEAD", "build": ""},
-		prometheus.Labels{"release_tag": "0.0.32"},
-	}
-
-	for _, labels := range tests {
 		ch := make(chan prometheus.Metric, 1)
 		defer close(ch)
 
-		createInfoMetric(&labels, ch)
+		createInfoMetric(test.metric, ch)
 
 		result := <-ch
 		resultMetric := dto.Metric{}
@@ -177,8 +157,8 @@ func TestCreateInfoMetric_ok(t *testing.T) {
 		resultLabels := (resultMetric.GetLabel())
 
 		for _, resultLabel := range resultLabels {
-			assert.NotNil(labels[resultLabel.GetName()])
-			assert.Equal(labels[resultLabel.GetName()], resultLabel.GetValue())
+			assert.NotNil(test.want[resultLabel.GetName()])
+			assert.Equal(test.want[resultLabel.GetName()], resultLabel.GetValue())
 		}
 		assert.Equal(float64(1), resultValue)
 	}
