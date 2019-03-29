@@ -183,10 +183,17 @@ func probeHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	r = r.WithContext(ctx)
 
-	// TODO: treat all query string as target with all params
+	query := r.URL.Query()
+	if len(query) > 1 {
+		level.Info(logger).Log("msg", "More than one parameter found in the request URL", "URL", r.URL)
+		http.Error(w, "Request should contain only one parameter: 'target'. Encode the URL if needed.", http.StatusBadRequest)
+		probeFailureCount.Inc()
+		probeDurationCount.Add(time.Since(start).Seconds())
+		return
+	}
 	target := r.URL.Query().Get("target")
 	if target == "" {
-		http.Error(w, "Target parameter is missing", http.StatusBadRequest)
+		http.Error(w, "Parameter 'target' is missing", http.StatusBadRequest)
 		probeFailureCount.Inc()
 		probeDurationCount.Add(time.Since(start).Seconds())
 		return
