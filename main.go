@@ -75,6 +75,7 @@ func getEnv(key, fallback string) string {
 	if value, ok := os.LookupEnv(key); ok {
 		return value
 	}
+	level.Warn(logger).Log("msg", "env variable doesn't set, using default value", "variable", key, "default_value", fallback)
 	return fallback
 }
 
@@ -203,8 +204,6 @@ func probeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	// TODO: log levels
-	// TODO: add cli options
 	http.HandleFunc("/probe", func(w http.ResponseWriter, r *http.Request) {
 		probeHandler(w, r)
 	})
