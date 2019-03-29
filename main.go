@@ -3,7 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
-	"log"
+	"fmt"
 	"net/http"
 	"os"
 	"regexp"
@@ -11,12 +11,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/prometheus/util/promlint"
 )
 
 var metricPattern = regexp.MustCompile(`^([a-zA-Z_:]([a-zA-Z0-9_:])*): (.*)$`)
+var logger log.Logger
 var (
 	up = prometheus.NewDesc(
 		"up",
@@ -43,9 +46,29 @@ type CommonStatusExporter struct {
 }
 
 func init() {
+	logger = log.NewLogfmtLogger(os.Stderr)
+	logger = level.NewFilter(logger, getLogLevel())
+	logger = log.With(logger, "ts", log.DefaultTimestampUTC)
+
 	prometheus.MustRegister(probeSuccessCount)
 	prometheus.MustRegister(probeFailureCount)
 	prometheus.MustRegister(probeDurationCount)
+}
+
+func getLogLevel() level.Option {
+	logLevel := getEnv("COMMONSTATUS_EXPORTER_LOG_LEVEL", "INFO")
+	switch strings.ToUpper(logLevel) {
+	case "DEBUG":
+		return level.AllowDebug()
+	case "INFO":
+		return level.AllowInfo()
+	case "WARN", "WARNING":
+		return level.AllowWarn()
+	case "ERROR":
+		return level.AllowError()
+	default:
+		return level.AllowInfo()
+	}
 }
 
 func getEnv(key, fallback string) string {
@@ -79,14 +102,14 @@ func (c CommonStatusExporter) Collect(ch chan<- prometheus.Metric) {
 	// TODO: check if we have configured timeout
 	resp, err := http.Get(c.hostURL)
 	if err != nil {
-		log.Printf("Error during http get request, err: %v", err)
+		level.Info(logger).Log("msg", "failed to connect to the host", "err", err)
 		c.probeFailure(ch)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("HTTP response status code is not 200: %v", resp.StatusCode)
+		level.Info(logger).Log("msg", "HTTP response status code is not 200", "code", resp.StatusCode)
 		c.probeFailure(ch)
 		return
 	}
@@ -99,14 +122,14 @@ func (c CommonStatusExporter) Collect(ch chan<- prometheus.Metric) {
 	var converted, failed float64
 	for s.Scan() {
 		metric := s.Text()
-		log.Printf("Received metric: %v", metric)
+		level.Debug(logger).Log("msg", "received a new metric", "metric", metric, "host", c.hostURL)
 		// TODO: move all this section to convert?
 		if isValidMetric(metric) && len(metric) > 0 {
 			name := metricPattern.FindStringSubmatch(metric)[1]
 			value := metricPattern.FindStringSubmatch(metric)[3]
 			floatValue, err := strconv.ParseFloat(value, 64)
 			if err != nil {
-				log.Printf("Error converting to float64, err: %v", err)
+				level.Debug(logger).Log("msg", "error converting to float64", "metric", metric, "err", err)
 				failed++
 				continue
 			}
@@ -114,20 +137,19 @@ func (c CommonStatusExporter) Collect(ch chan<- prometheus.Metric) {
 			ch <- prometheus.MustNewConstMetric(desc, prometheus.UntypedValue, floatValue)
 
 			converted++
-			log.Println("Added metric to the registry!")
+			level.Debug(logger).Log("msg", "successfully added metric to the registry", "metric", metric)
 		} else {
-			log.Println("The metric is not valid, trying to convert it")
-
+			level.Debug(logger).Log("msg", "the metric is not valid, trying to convert it", "metric", metric)
 			// fixAndAddMetric(metric)
 			err := convertMetric(metric, ch)
 			if err != nil {
-				log.Printf("Failed to convert metric, error: %v\n", err)
+				level.Debug(logger).Log("msg", "failed to convert it", "metric", metric, "err", err)
 				failed++
 				continue
 			}
 
 			converted++
-			log.Println("Converted and added metric to the registry!")
+			level.Debug(logger).Log("msg", "converted and added metric to the registry", "metric", metric)
 		}
 	}
 
@@ -142,7 +164,7 @@ func (c CommonStatusExporter) Collect(ch chan<- prometheus.Metric) {
 
 	// check if errors ocurred during reading - e.g dropped connection or etc.
 	if err := s.Err(); err != nil {
-		log.Printf("error ocurred during the response body reading, err: %v", err)
+		level.Info(logger).Log("msg", "error ocurred during reading the response body", "err", err)
 		c.probeFailure(ch)
 		return
 	}
@@ -150,7 +172,7 @@ func (c CommonStatusExporter) Collect(ch chan<- prometheus.Metric) {
 	probeDurationCount.Add(duration)
 	probeSuccessCount.Inc()
 	ch <- prometheus.MustNewConstMetric(up, prometheus.GaugeValue, 1)
-	log.Printf("probe succeeded, duration: %v", duration)
+	level.Info(logger).Log("msg", "probe succeeded", "host", c.hostURL, "duration", fmt.Sprintf("%.2f s.", duration), "coverted_metrics", converted, "failed_metrics", failed)
 }
 
 func probeHandler(w http.ResponseWriter, r *http.Request) {
@@ -182,11 +204,16 @@ func probeHandler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	// TODO: log levels
+	// TODO: add cli options
 	http.HandleFunc("/probe", func(w http.ResponseWriter, r *http.Request) {
 		probeHandler(w, r)
 	})
 	http.Handle("/metrics", promhttp.Handler())
 
 	port := getEnv("COMMONSTATUS_EXPORTER_PORT", "9259")
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	if err := http.ListenAndServe(":"+port, nil); err != nil {
+		level.Error(logger).Log("msg", "failed to start the server", "err", err)
+		os.Exit(1)
+	}
+
 }
