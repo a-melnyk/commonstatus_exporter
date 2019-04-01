@@ -39,11 +39,18 @@ func parseValue(value string) (float64, error) {
 	return strconv.ParseFloat(value, 64)
 }
 
-func createPrometheusMetric(name string, desc string, value float64, metricType prometheus.ValueType) (prometheus.Metric, error) {
+func createPrometheusMetricWithLabels(name string, desc string, value float64, labels prometheus.Labels, metricType prometheus.ValueType) (prometheus.Metric, error) {
 	name = invalidChars.ReplaceAllLiteralString(name, "_")
-	promDesc := prometheus.NewDesc(name, desc, nil, nil)
-	metric := prometheus.MustNewConstMetric(promDesc, metricType, value)
+	promDesc := prometheus.NewDesc(name, desc, nil, labels)
+	metric, err := prometheus.NewConstMetric(promDesc, metricType, value)
+	if err != nil {
+		return nil, err
+	}
 	return metric, nil
+}
+
+func createPrometheusMetric(name string, desc string, value float64, metricType prometheus.ValueType) (prometheus.Metric, error) {
+	return createPrometheusMetricWithLabels(name, desc, value, nil, metricType)
 }
 
 func convertAndCreatePrometheusMetric(name string, desc string, value string, metricType prometheus.ValueType) (prometheus.Metric, error) {
@@ -96,8 +103,10 @@ func convertStartupTime(metric string, ch chan<- prometheus.Metric) error {
 	}
 	uptime := time.Since(parsedTime).Seconds()
 
-	promDesc := prometheus.NewDesc("app_uptime_seconds_total", "Time that an application is running", nil, nil)
-	promMetric := prometheus.MustNewConstMetric(promDesc, prometheus.CounterValue, uptime)
+	promMetric, err := createPrometheusMetric("app_uptime_seconds_total", "Time that an application is running", uptime, prometheus.CounterValue)
+	if err != nil {
+		return err
+	}
 
 	ch <- promMetric
 	return nil
@@ -111,8 +120,10 @@ func createInfoMetric(metric string, ch chan<- prometheus.Metric) error {
 	infoLabels := prometheus.Labels{
 		"release_tag": releaseTag.FindStringSubmatch(metric)[1],
 	}
-	promDesc := prometheus.NewDesc("commonstatus_info", "CommonStatus information", nil, infoLabels)
-	promMetric := prometheus.MustNewConstMetric(promDesc, prometheus.GaugeValue, float64(1))
+	promMetric, err := createPrometheusMetricWithLabels("commonstatus_info", "CommonStatus information", float64(1), infoLabels, prometheus.GaugeValue)
+	if err != nil {
+		return err
+	}
 
 	ch <- promMetric
 

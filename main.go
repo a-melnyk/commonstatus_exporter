@@ -125,6 +125,8 @@ func (c CommonStatusExporter) Collect(ch chan<- prometheus.Metric) {
 		metric := s.Text()
 		level.Debug(logger).Log("msg", "received a new metric", "metric", metric, "host", c.hostURL)
 		// TODO: move all this section to convert?
+
+		// TODO: handle duplicates
 		if isValidMetric(metric) && len(metric) > 0 {
 			name := metricPattern.FindStringSubmatch(metric)[1]
 			value := metricPattern.FindStringSubmatch(metric)[3]
