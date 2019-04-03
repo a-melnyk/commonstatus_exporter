@@ -100,17 +100,24 @@ func (c CommonStatusExporter) Describe(ch chan<- *prometheus.Desc) {
 
 // Implements prometheus.Collector.
 func (c CommonStatusExporter) Collect(ch chan<- prometheus.Metric) {
-	// TODO: check if we have configured timeout
-	resp, err := http.Get(c.hostURL)
+	timeoutSeconds, err := strconv.Atoi(getEnv("COMMONSTATUS_CONNECTION_TIMEOUT", "8"))
 	if err != nil {
-		level.Info(logger).Log("msg", "failed to connect to the host", "err", err)
+		level.Warn(logger).Log("msg", "Wrong value of COMMONSTATUS_CONNECTION_TIMEOUT environment variable, using default value", "err", err)
+		timeoutSeconds = 8
+	}
+	client := &http.Client{
+		Timeout: time.Duration(timeoutSeconds) * time.Second,
+	}
+	resp, err := client.Get(c.hostURL)
+	if err != nil {
+		level.Info(logger).Log("msg", "failed to connect to the host", "err", err, "hostURL", c.hostURL)
 		c.probeFailure(ch)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		level.Info(logger).Log("msg", "HTTP response status code is not 200", "code", resp.StatusCode)
+		level.Info(logger).Log("msg", "HTTP response status code is not 200", "code", resp.StatusCode, "hostURL", c.hostURL)
 		c.probeFailure(ch)
 		return
 	}
@@ -125,8 +132,6 @@ func (c CommonStatusExporter) Collect(ch chan<- prometheus.Metric) {
 		metric := s.Text()
 		level.Debug(logger).Log("msg", "received a new metric", "metric", metric, "host", c.hostURL)
 		// TODO: move all this section to convert?
-
-		// TODO: handle duplicates
 		if isValidMetric(metric) && len(metric) > 0 {
 			name := metricPattern.FindStringSubmatch(metric)[1]
 			value := metricPattern.FindStringSubmatch(metric)[3]
@@ -180,20 +185,29 @@ func (c CommonStatusExporter) Collect(ch chan<- prometheus.Metric) {
 
 func probeHandler(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	timeoutSeconds := 10.0
+	timeoutSeconds := 2.0
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSeconds*float64(time.Second)))
 	defer cancel()
+
+	// select {
+	// case <-time.After(1 * time.Second):
+	// 	fmt.Println("overslept")
+	// 	http.Error(w, "Request should contain only one parameter: 'target'. Timeout exceeded", http.StatusRequestTimeout)
+	// case <-ctx.Done():
+	// 	fmt.Println(ctx.Err()) // prints "context deadline exceeded"
+	// }
+
 	r = r.WithContext(ctx)
 
 	query := r.URL.Query()
 	if len(query) > 1 {
-		level.Info(logger).Log("msg", "More than one parameter found in the request URL", "URL", r.URL)
+		level.Warn(logger).Log("msg", "More than one parameter found in the request URL", "URL", r.URL)
 		http.Error(w, "Request should contain only one parameter: 'target'. Encode the URL if needed.", http.StatusBadRequest)
 		probeFailureCount.Inc()
 		probeDurationCount.Add(time.Since(start).Seconds())
 		return
 	}
-	target := r.URL.Query().Get("target")
+	target := query.Get("target")
 	if target == "" {
 		http.Error(w, "Parameter 'target' is missing", http.StatusBadRequest)
 		probeFailureCount.Inc()

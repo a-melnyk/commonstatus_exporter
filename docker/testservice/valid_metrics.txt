@@ -26,7 +26,6 @@ MethodRunTime_ByClass_CatalogDuplicatesService: count=2,597 averageValue=1 realM
 MethodRuntime_CatalogDuplicatesService.finishBatchRetrievalOfDuplicateSets: count=0 averageValue=0 realMaxValue=0 averageEventRate=0 maxEventRate=0 stdDeviation=0 maxValue=0
 MethodRuntime_CatalogDuplicatesService.finishBatchRetrievalOfLoadedReferences: count=0 averageValue=0 realMaxValue=0 averageEventRate=0 maxEventRate=0 stdDeviation=0 maxValue=0
 MethodRuntime_CatalogDuplicatesService.getContentIdsThatHaveArticleIds: count=0 averageValue=0 realMaxValue=0 averageEventRate=0 maxEventRate=0 stdDeviation=0 maxValue=0
-MethodRuntime_CatalogDuplicatesService.getDuplicateSets: count=0 averageValue=0 realMaxValue=0 averageEventRate=0 maxEventRate=0 stdDeviation=0 maxValue=0
 MethodRuntime_CatalogDuplicatesService.getDuplicateSets: count=2,597 averageValue=1 realMaxValue=1,067 averageEventRate=43.283 maxEventRate=74 stdDeviation=23 maxValue=24
 MethodRuntime_CatalogDuplicatesService.getDuplicateSetsBatch: count=0 averageValue=0 realMaxValue=0 averageEventRate=0 maxEventRate=0 stdDeviation=0 maxValue=0
 MethodRuntime_CatalogManagementService.setLive: count=8 averageValue=156 realMaxValue=546 averageEventRate=0.133 maxEventRate=2 stdDeviation=157 maxValue=313
