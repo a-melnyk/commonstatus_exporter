@@ -242,6 +242,7 @@ func probeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	// TODO: review regexps
 	http.HandleFunc("/probe", func(w http.ResponseWriter, r *http.Request) {
 		probeHandler(w, r)
 	})
