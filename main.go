@@ -20,6 +20,7 @@ import (
 
 var metricPattern = regexp.MustCompile(`^([a-zA-Z_:]([a-zA-Z0-9_:])*): (.*)$`)
 var logger log.Logger
+var timeoutSeconds float64
 var (
 	up = prometheus.NewDesc(
 		"up",
@@ -53,6 +54,13 @@ func init() {
 	prometheus.MustRegister(probeSuccessCount)
 	prometheus.MustRegister(probeFailureCount)
 	prometheus.MustRegister(probeDurationCount)
+
+	var err error
+	timeoutSeconds, err = strconv.ParseFloat(getEnv("COMMONSTATUS_CONNECTION_TIMEOUT", "8.0"), 64)
+	if err != nil {
+		level.Error(logger).Log("msg", "Wrong value of COMMONSTATUS_CONNECTION_TIMEOUT environment variable, using default value", "err", err)
+		os.Exit(1)
+	}
 }
 
 func getLogLevel() level.Option {
@@ -100,11 +108,7 @@ func (c CommonStatusExporter) Describe(ch chan<- *prometheus.Desc) {
 
 // Implements prometheus.Collector.
 func (c CommonStatusExporter) Collect(ch chan<- prometheus.Metric) {
-	timeoutSeconds, err := strconv.Atoi(getEnv("COMMONSTATUS_CONNECTION_TIMEOUT", "8"))
-	if err != nil {
-		level.Warn(logger).Log("msg", "Wrong value of COMMONSTATUS_CONNECTION_TIMEOUT environment variable, using default value", "err", err)
-		timeoutSeconds = 8
-	}
+
 	client := &http.Client{
 		Timeout: time.Duration(timeoutSeconds) * time.Second,
 	}
@@ -122,8 +126,9 @@ func (c CommonStatusExporter) Collect(ch chan<- prometheus.Metric) {
 		return
 	}
 
-	// Wrap response body into buffered scanner. Set split function to scanLines
+	// Wrap response body into buffered scanner
 	s := bufio.NewScanner(resp.Body)
+	// Set split function to scanLines
 	s.Split(bufio.ScanLines)
 
 	// iterate over lines
@@ -185,17 +190,21 @@ func (c CommonStatusExporter) Collect(ch chan<- prometheus.Metric) {
 
 func probeHandler(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	timeoutSeconds := 2.0
+
+	// If a timeout is configured via the Prometheus header, add it to the request.
+	if v := r.Header.Get("X-Prometheus-Scrape-Timeout-Seconds"); v != "" {
+		var err error
+		timeoutSeconds, err = strconv.ParseFloat(v, 64)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to parse timeout from Prometheus header: %s", err), http.StatusInternalServerError)
+			return
+		}
+	}
+	if timeoutSeconds == 0 {
+		timeoutSeconds = 10
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSeconds*float64(time.Second)))
 	defer cancel()
-
-	// select {
-	// case <-time.After(1 * time.Second):
-	// 	fmt.Println("overslept")
-	// 	http.Error(w, "Request should contain only one parameter: 'target'. Timeout exceeded", http.StatusRequestTimeout)
-	// case <-ctx.Done():
-	// 	fmt.Println(ctx.Err()) // prints "context deadline exceeded"
-	// }
 
 	r = r.WithContext(ctx)
 
