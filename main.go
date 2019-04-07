@@ -18,7 +18,7 @@ import (
 	"github.com/prometheus/prometheus/util/promlint"
 )
 
-var metricPattern = regexp.MustCompile(`^([a-zA-Z_:]([a-zA-Z0-9_:])*): (.*)$`)
+var metricPattern = regexp.MustCompile(`^([a-zA-Z_:][a-zA-Z0-9_:]*): (.*)$`)
 var logger log.Logger
 var timeoutSeconds float64
 var (
@@ -42,8 +42,9 @@ var (
 )
 
 type CommonStatusExporter struct {
-	hostURL   string
-	startTime time.Time
+	hostURL        string
+	metricsScanner *bufio.Scanner
+	startTime      time.Time
 }
 
 func init() {
@@ -81,6 +82,7 @@ func getLogLevel() level.Option {
 
 func getEnv(key, fallback string) string {
 	if value, ok := os.LookupEnv(key); ok {
+		level.Info(logger).Log("msg", "successfully processed env variable", "variable", key, "value", value)
 		return value
 	}
 	level.Warn(logger).Log("msg", "env variable doesn't set, using default value", "variable", key, "default_value", fallback)
@@ -95,12 +97,6 @@ func isValidMetric(metric string) bool {
 	return true
 }
 
-func (c CommonStatusExporter) probeFailure(ch chan<- prometheus.Metric) {
-	ch <- prometheus.MustNewConstMetric(up, prometheus.GaugeValue, 0)
-	probeFailureCount.Inc()
-	probeDurationCount.Add(time.Since(c.startTime).Seconds())
-}
-
 // Implements prometheus.Collector.
 func (c CommonStatusExporter) Describe(ch chan<- *prometheus.Desc) {
 	ch <- up
@@ -109,26 +105,8 @@ func (c CommonStatusExporter) Describe(ch chan<- *prometheus.Desc) {
 // Implements prometheus.Collector.
 func (c CommonStatusExporter) Collect(ch chan<- prometheus.Metric) {
 
-	client := &http.Client{
-		Timeout: time.Duration(timeoutSeconds) * time.Second,
-	}
-	resp, err := client.Get(c.hostURL)
-	if err != nil {
-		level.Info(logger).Log("msg", "failed to connect to the host", "err", err, "hostURL", c.hostURL)
-		c.probeFailure(ch)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		level.Info(logger).Log("msg", "HTTP response status code is not 200", "code", resp.StatusCode, "hostURL", c.hostURL)
-		c.probeFailure(ch)
-		return
-	}
-
-	// Wrap response body into buffered scanner
-	s := bufio.NewScanner(resp.Body)
 	// Set split function to scanLines
+	s := c.metricsScanner
 	s.Split(bufio.ScanLines)
 
 	// iterate over lines
@@ -136,27 +114,25 @@ func (c CommonStatusExporter) Collect(ch chan<- prometheus.Metric) {
 	for s.Scan() {
 		metric := s.Text()
 		level.Debug(logger).Log("msg", "received a new metric", "metric", metric, "host", c.hostURL)
-		// TODO: move all this section to convert?
 		if isValidMetric(metric) && len(metric) > 0 {
 			name := metricPattern.FindStringSubmatch(metric)[1]
-			value := metricPattern.FindStringSubmatch(metric)[3]
+			value := metricPattern.FindStringSubmatch(metric)[2]
 			floatValue, err := strconv.ParseFloat(value, 64)
 			if err != nil {
 				level.Debug(logger).Log("msg", "error converting to float64", "metric", metric, "err", err)
 				failed++
 				continue
 			}
+
 			desc := prometheus.NewDesc(name, "", nil, nil)
 			ch <- prometheus.MustNewConstMetric(desc, prometheus.UntypedValue, floatValue)
-
 			converted++
 			level.Debug(logger).Log("msg", "successfully added metric to the registry", "metric", metric)
 		} else {
 			level.Debug(logger).Log("msg", "the metric is not valid, trying to convert it", "metric", metric)
-			// fixAndAddMetric(metric)
 			err := convertMetric(metric, ch)
 			if err != nil {
-				level.Debug(logger).Log("msg", "failed to convert it", "metric", metric, "err", err)
+				level.Debug(logger).Log("msg", "failed to convert metric", "metric", metric, "err", err)
 				failed++
 				continue
 			}
@@ -171,25 +147,31 @@ func (c CommonStatusExporter) Collect(ch chan<- prometheus.Metric) {
 	failedMetricsGauge := prometheus.NewDesc("failed_metrics", "The number of CommonStatus metrics failed to convert to prometheus metrics", nil, nil)
 	ch <- prometheus.MustNewConstMetric(failedMetricsGauge, prometheus.GaugeValue, failed)
 
-	duration := time.Since(c.startTime).Seconds()
 	probeDurationGauge := prometheus.NewDesc("probe_duration_seconds", "Duration of the probe in seconds", nil, nil)
-	ch <- prometheus.MustNewConstMetric(probeDurationGauge, prometheus.GaugeValue, duration)
+	ch <- prometheus.MustNewConstMetric(probeDurationGauge, prometheus.GaugeValue, time.Since(c.startTime).Seconds())
 
 	// check if errors ocurred during reading - e.g dropped connection or etc.
 	if err := s.Err(); err != nil {
-		level.Info(logger).Log("msg", "error ocurred during reading the response body", "err", err)
-		c.probeFailure(ch)
+		level.Warn(logger).Log("msg", "error ocurred during reading the response body", "err", err)
+		probeFailureCount.Inc()
+		ch <- prometheus.MustNewConstMetric(up, prometheus.GaugeValue, 0)
 		return
 	}
 
-	probeDurationCount.Add(duration)
-	probeSuccessCount.Inc()
 	ch <- prometheus.MustNewConstMetric(up, prometheus.GaugeValue, 1)
-	level.Info(logger).Log("msg", "probe succeeded", "host", c.hostURL, "duration", fmt.Sprintf("%.2f s.", duration), "coverted_metrics", converted, "failed_metrics", failed)
+	level.Info(logger).Log("msg", "collect succeeded", "host", c.hostURL, "coverted_metrics", converted, "failed_metrics", failed)
+}
+
+func probeFailure(start time.Time, msg string, err error, url string) {
+	level.Warn(logger).Log("msg", msg, "err", err, "URL", url)
+	probeFailureCount.Inc()
+	probeDurationCount.Add(time.Since(start).Seconds())
 }
 
 func probeHandler(w http.ResponseWriter, r *http.Request) {
+	requestURL := r.URL
 	start := time.Now()
+	level.Info(logger).Log("msg", "probe started", "URL", requestURL.String())
 
 	// If a timeout is configured via the Prometheus header, add it to the request.
 	if v := r.Header.Get("X-Prometheus-Scrape-Timeout-Seconds"); v != "" {
@@ -197,42 +179,66 @@ func probeHandler(w http.ResponseWriter, r *http.Request) {
 		timeoutSeconds, err = strconv.ParseFloat(v, 64)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to parse timeout from Prometheus header: %s", err), http.StatusInternalServerError)
+			probeFailure(start, "can't parse value of header X-Prometheus-Scrape-Timeout-Seconds", err, requestURL.String())
 			return
 		}
-	}
-	if timeoutSeconds == 0 {
-		timeoutSeconds = 10
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSeconds*float64(time.Second)))
 	defer cancel()
 
 	r = r.WithContext(ctx)
 
-	query := r.URL.Query()
+	query := requestURL.Query()
 	if len(query) > 1 {
-		level.Warn(logger).Log("msg", "More than one parameter found in the request URL", "URL", r.URL)
 		http.Error(w, "Request should contain only one parameter: 'target'. Encode the URL if needed.", http.StatusBadRequest)
-		probeFailureCount.Inc()
-		probeDurationCount.Add(time.Since(start).Seconds())
+		probeFailure(start, "more than one parameter found in the request URL", nil, requestURL.String())
 		return
 	}
 	target := query.Get("target")
 	if target == "" {
 		http.Error(w, "Parameter 'target' is missing", http.StatusBadRequest)
-		probeFailureCount.Inc()
-		probeDurationCount.Add(time.Since(start).Seconds())
+		probeFailure(start, "parameter 'target' is missing", nil, requestURL.String())
 		return
 	}
 
+	req, err := http.NewRequest("GET", target, nil)
+	if err != nil {
+		http.Error(w, "Failed to create a request", http.StatusInternalServerError)
+		probeFailure(start, "failed to create a request", err, requestURL.String())
+		return
+	}
+	req = req.WithContext(ctx)
+	client := http.DefaultClient
+	resp, err := client.Do(req)
+	if err != nil {
+		probeFailure(start, "failed to create a request", err, requestURL.String())
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		probeFailure(start, "HTTP response status code is not 200", fmt.Errorf("HTTP status code is: %v, expected '200 OK'", resp.StatusCode), requestURL.String())
+		return
+	}
+
+	// Wrap response body into buffered scanner
+	s := bufio.NewScanner(resp.Body)
+
 	registry := prometheus.NewRegistry()
 	c := CommonStatusExporter{
-		hostURL:   target,
-		startTime: start,
+		hostURL:        target,
+		metricsScanner: s,
+		startTime:      start,
 	}
 	registry.MustRegister(c)
 	h := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 
 	h.ServeHTTP(w, r)
+
+	duration := time.Since(start).Seconds()
+	probeSuccessCount.Inc()
+	probeDurationCount.Add(duration)
+	level.Info(logger).Log("msg", "probe succeeded", "URL", requestURL.String(), "duration", fmt.Sprintf("%.2f s.", duration))
 }
 
 func main() {

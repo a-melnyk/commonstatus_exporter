@@ -243,6 +243,4 @@ func convertMetric(metric string, ch chan<- prometheus.Metric) error {
 	default:
 		return defaultMetricsConverter(metric, ch)
 	}
-
-	return fmt.Errorf("can't convert metric: %s", metric)
 }
