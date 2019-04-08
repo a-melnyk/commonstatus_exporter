@@ -211,12 +211,14 @@ func probeHandler(w http.ResponseWriter, r *http.Request) {
 	client := http.DefaultClient
 	resp, err := client.Do(req)
 	if err != nil {
-		probeFailure(start, "failed to create a request", err, requestURL.String())
+		http.Error(w, "Failed to execute a request", http.StatusBadGateway)
+		probeFailure(start, "failed to execute a request", err, requestURL.String())
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		http.Error(w, "Server returned wrong response code", http.StatusBadGateway)
 		probeFailure(start, "HTTP response status code is not 200", fmt.Errorf("HTTP status code is: %v, expected '200 OK'", resp.StatusCode), requestURL.String())
 		return
 	}
@@ -242,7 +244,6 @@ func probeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	// TODO: Tests for main
 	// TODO: CI + build+ deploy
 	// TODO: Development env
 	// TODO: Development manual
