@@ -18,7 +18,7 @@ import (
 	"github.com/prometheus/prometheus/util/promlint"
 )
 
-var metricPattern = regexp.MustCompile(`^([a-zA-Z_:][a-zA-Z0-9_:]*): (.*)$`)
+var metricPattern = regexp.MustCompile(`^([a-zA-Z_:].*):\s+(.+)$`)
 var logger log.Logger
 var timeoutSeconds float64
 var (
@@ -242,7 +242,11 @@ func probeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	// TODO: review regexps
+	// TODO: Tests for main
+	// TODO: CI + build+ deploy
+	// TODO: Development env
+	// TODO: Development manual
+	// TODO: Documentation + demo setup
 	http.HandleFunc("/probe", func(w http.ResponseWriter, r *http.Request) {
 		probeHandler(w, r)
 	})

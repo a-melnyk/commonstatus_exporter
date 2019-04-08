@@ -22,12 +22,12 @@ const (
 
 var (
 	invalidChars    = regexp.MustCompile(`[^a-zA-Z0-9:_]`)
-	loadAvg         = regexp.MustCompile(`^LoadAvg: (?P<la1m>\d+(\.\d+)?) (?P<la5m>\d+(\.\d+)?) (?P<la15m>\d+(\.\d+)?)$`)
+	loadAvg         = regexp.MustCompile(`^LoadAvg:\s+(?P<la1m>\d+(\.\d+)?) (?P<la5m>\d+(\.\d+)?) (?P<la15m>\d+(\.\d+)?)$`)
 	numbericValue   = regexp.MustCompile(`^([0-9]+[0-9,.]*[0-9]*)$`)
-	metricTemplate  = regexp.MustCompile(`^([a-zA-Z_:].*): (.*)$`)
-	startupTime     = regexp.MustCompile(`^StartupTime: (.*)$`)
-	releaseTag      = regexp.MustCompile(`^ReleaseTag: (.*)$`)
-	runningAverages = regexp.MustCompile(`^(.+): count=([0-9]+[0-9,.]*) averageValue=([0-9]+[0-9,.]*) realMaxValue=([0-9]+[0-9,.]*) averageEventRate=[0-9]+[0-9,.]* maxEventRate=[0-9]+[0-9,.]* stdDeviation=([0-9]+[0-9,.]*) maxValue=[0-9]+[0-9,.]*$`)
+	metricTemplate  = regexp.MustCompile(`^([a-zA-Z_:].*):\s+(.+)$`)
+	startupTime     = regexp.MustCompile(`^StartupTime:\s+(.*)$`)
+	releaseTag      = regexp.MustCompile(`^ReleaseTag:\s+(.*)$`)
+	runningAverages = regexp.MustCompile(`^(.+):\s+count=([0-9]+[0-9,.]*) averageValue=([0-9]+[0-9,.]*) realMaxValue=([0-9]+[0-9,.]*) averageEventRate=[0-9]+[0-9,.]* maxEventRate=[0-9]+[0-9,.]* stdDeviation=([0-9]+[0-9,.]*) maxValue=[0-9]+[0-9,.]*$`)
 )
 
 func parseValue(value string) (float64, error) {
