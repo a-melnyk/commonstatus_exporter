@@ -57,15 +57,15 @@ func init() {
 	prometheus.MustRegister(probeDurationCount)
 
 	var err error
-	timeoutSeconds, err = strconv.ParseFloat(getEnv("COMMONSTATUS_CONNECTION_TIMEOUT", "8.0"), 64)
+	timeoutSeconds, err = strconv.ParseFloat(getEnv("CS_CONNECTION_TIMEOUT", "8.0"), 64)
 	if err != nil {
-		level.Error(logger).Log("msg", "Wrong value of COMMONSTATUS_CONNECTION_TIMEOUT environment variable, using default value", "err", err)
+		level.Error(logger).Log("msg", "Wrong value of CS_CONNECTION_TIMEOUT environment variable, using default value", "err", err)
 		os.Exit(1)
 	}
 }
 
 func getLogLevel() level.Option {
-	logLevel := getEnv("COMMONSTATUS_EXPORTER_LOG_LEVEL", "INFO")
+	logLevel := getEnv("CS_LOG_LEVEL", "INFO")
 	switch strings.ToUpper(logLevel) {
 	case "DEBUG":
 		return level.AllowDebug()
@@ -244,7 +244,7 @@ func probeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	// TODO: CI + build+ deploy
+	// TODO: CI + deploy
 	// TODO: Development env
 	// TODO: Development manual
 	// TODO: Documentation + demo setup
@@ -253,10 +253,9 @@ func main() {
 	})
 	http.Handle("/metrics", promhttp.Handler())
 
-	port := getEnv("COMMONSTATUS_EXPORTER_PORT", "9259")
+	port := getEnv("CS_PORT", "9259")
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
 		level.Error(logger).Log("msg", "failed to start the server", "err", err)
 		os.Exit(1)
 	}
-
 }
