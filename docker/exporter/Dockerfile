@@ -1,11 +1,13 @@
-FROM golang:1.12.1
-
+FROM golang:1.12.1 as builder
+ADD . /app
 WORKDIR /app
-
-COPY go.mod go.sum ./
+# COPY go.mod go.sum ./
 RUN go mod download
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o cs-exporter .
 
-COPY ./ ./
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o /go/bin/cs-exporter .
-
-ENTRYPOINT ["/go/bin/cs-exporter"]
+FROM alpine:latest
+RUN apk --no-cache add ca-certificates
+WORKDIR /root/
+COPY --from=builder /app/cs-exporter .
+EXPOSE 9259
+CMD ["./cs-exporter"]
