@@ -5,16 +5,48 @@ jobs:
       - image: circleci/golang:1.12.1-stretch
     steps:
       - checkout
-      - run: make test 
+      - run: make test
   build:
-    docker:
-      - image: circleci/golang:1.12.1-stretch
+    machine: true
     steps:
       - checkout
-      - run: make build 
+      - run: make build
+      - run:
+        name: Archive Docker image
+        command: docker save -o image.tar cs_exporter
+      - persist_to_workspace:
+        root: .
+        paths:
+          - ./image.tar
+  deploy:
+    docker:
+      - image: circleci/buildpack-deps:stretch
+    steps:
+      - attach_workspace:
+        at: /tmp/workspace
+      - run:
+        name: Load archived Docker image
+        command: docker load -i /tmp/workspace/image.tar
+      - run:
+        name: Build and push Docker image to Docker Hub
+        command: |
+          IMAGE_TAG="0.0.${CIRCLE_BUILD_NUM}"
+          docker tag cs_exporter ${DOCKER_LOGIN}/cs_exporter:${IMAGE_TAG}
+          docker tag cs_exporter ${DOCKER_LOGIN}/cs_exporter:latest
+          echo ${DOCKER_PWD} | docker login -u ${DOCKER_LOGIN} --password-stdin
+          docker push ${DOCKER_LOGIN}/cs_exporter:${IMAGE_TAG}
+          docker push ${DOCKER_LOGIN}/cs_exporter:latest
+
 workflows:
   version: 2
   test_and_build:
     jobs:
-      - test 
+      - test
       - build
+      - deploy
+        requires:
+          - test
+          - build
+        filters:
+          branches:
+            only: master
