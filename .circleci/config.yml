@@ -28,14 +28,14 @@ jobs:
         name: Load archived Docker image
         command: docker load -i /tmp/workspace/image.tar
       - run:
-        name: Build and push Docker image to Docker Hub
+        name: Build and push Docker image to quay.io
         command: |
           IMAGE_TAG="0.0.${CIRCLE_BUILD_NUM}"
-          docker tag cs_exporter ${DOCKER_LOGIN}/cs_exporter:${IMAGE_TAG}
-          docker tag cs_exporter ${DOCKER_LOGIN}/cs_exporter:latest
-          echo ${DOCKER_PWD} | docker login -u ${DOCKER_LOGIN} --password-stdin
-          docker push ${DOCKER_LOGIN}/cs_exporter:${IMAGE_TAG}
-          docker push ${DOCKER_LOGIN}/cs_exporter:latest
+          docker tag cs_exporter ${QUAY_LOGIN}/cs_exporter:${IMAGE_TAG}
+          docker tag cs_exporter ${QUAY_LOGIN}/cs_exporter:latest
+          docker login -u ${QUAY_LOGIN} -p ${QUAY_PASSWORD} quay.io
+          docker push ${QUAY_LOGIN}/cs_exporter:${IMAGE_TAG}
+          docker push ${QUAY_LOGIN}/cs_exporter:latest
 
 workflows:
   version: 2
