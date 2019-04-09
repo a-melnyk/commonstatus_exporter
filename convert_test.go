@@ -93,14 +93,14 @@ func TestParseValue(t *testing.T) {
 func TestConvertStartupTime_ok(t *testing.T) {
 	assert := assert.New(t)
 	type testpair struct {
-		metric    string
-		timestamp int64
+		metric     string
+		timeString string
 	}
 
 	var tests = []testpair{
-		{"StartupTime: Mon Jan 28 14:24:03 CET 2019", 1548681843},
-		{"StartupTime: Tue Jan 01 14:24:00 CET 2019", 1546349040},
-		{"StartupTime: Tue Jan 01 14:24:00 GMT 2019", 1546352640},
+		{"StartupTime: Mon Jan 28 14:24:03 CET 2019", "Mon Jan 28 14:24:03 CET 2019"},
+		{"StartupTime: Tue Jan 01 14:24:00 CET 2019", "Tue Jan 01 14:24:00 CET 2019"},
+		{"StartupTime: Tue Jan 01 14:24:00 GMT 2019", "Tue Jan 01 14:24:00 GMT 2019"},
 	}
 
 	for _, test := range tests {
@@ -117,7 +117,8 @@ func TestConvertStartupTime_ok(t *testing.T) {
 		resultDesc := result.Desc().String()
 
 		wantDesc := prometheus.NewDesc("app_uptime_seconds_total", "Time that an application is running", nil, nil)
-		uptime := time.Since(time.Unix(test.timestamp, 0)).Seconds()
+		parsedTime, _ := time.Parse(time.UnixDate, test.timeString)
+		uptime := time.Since(parsedTime).Seconds()
 		want := prometheus.MustNewConstMetric(wantDesc, prometheus.CounterValue, uptime)
 		assert.Equal(wantDesc.String(), resultDesc, "descriptions are different! Wanted: %v, got: %v, metric: %s", wantDesc, resultDesc, test.metric)
 
