@@ -42,11 +42,12 @@ jobs:
 
 workflows:
   version: 2
-  test_and_build:
+  test_and_build_deploy:
     jobs:
       - test
       - build
       - deploy:
+          context: default
           requires:
             - test
             - build
