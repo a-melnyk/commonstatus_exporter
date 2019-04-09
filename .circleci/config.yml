@@ -7,9 +7,11 @@ jobs:
       - checkout
       - run: make test
   build:
-    machine: true
+    docker:
+      - image: circleci/buildpack-deps:stretch
     steps:
       - checkout
+      - setup_remote_docker
       - run: make build
       - run:
           name: Archive Docker image
@@ -24,6 +26,7 @@ jobs:
     steps:
       - attach_workspace:
           at: /tmp/workspace
+      - setup_remote_docker
       - run:
           name: Load archived Docker image
           command: docker load -i /tmp/workspace/image.tar
