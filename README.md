@@ -1,3 +1,5 @@
+[![CircleCI](https://circleci.com/gh/gips0n/commonstatus_exporter.svg?style=svg)](https://circleci.com/gh/gips0n/commonstatus_exporter)
+
 # commonstatus_exporter
 Prometheus CommonStatus blackbox exporter
 
