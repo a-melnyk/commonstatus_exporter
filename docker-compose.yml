@@ -23,7 +23,7 @@ services:
     ports:
       - 9259:9259
     links:
-      - testserver
+      - testservice 
 
   testservice:
     build:
