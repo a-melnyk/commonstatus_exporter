@@ -37,8 +37,8 @@ jobs:
             docker tag cs_exporter ${QUAY_ORG}/cs_exporter:${IMAGE_TAG}
             docker tag cs_exporter ${QUAY_ORG}/cs_exporter:latest
             echo ${QUAY_PASSWORD} | docker login -u ${QUAY_LOGIN} --password-stdin quay.io
-            docker push ${QUAY_ORG}/cs_exporter:${IMAGE_TAG}
-            docker push ${QUAY_ORG}/cs_exporter:latest
+            docker push quay.io/${QUAY_ORG}/cs_exporter:${IMAGE_TAG}
+            docker push quay.io/${QUAY_ORG}/cs_exporter:latest
 
 workflows:
   version: 2
