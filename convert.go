@@ -10,14 +10,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-type MetricType int
+type metricType int
 
 const (
-	LoadAvg MetricType = iota
-	StartupTime
-	ReleaseTag
-	RunningAverages
-	Other
+	loadAvgType metricType = iota
+	startupTimeType
+	releaseTagType
+	runningAveragesType
+	otherType
 )
 
 var (
@@ -206,24 +206,24 @@ func defaultMetricsConverter(metric string, ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-func metricType(metric string) MetricType {
+func getMetricType(metric string) metricType {
 	if releaseTag.MatchString(metric) {
-		return ReleaseTag
+		return releaseTagType
 	}
 
 	if loadAvg.MatchString(metric) {
-		return LoadAvg
+		return loadAvgType
 	}
 
 	if startupTime.MatchString(metric) {
-		return StartupTime
+		return startupTimeType
 	}
 
 	if runningAverages.MatchString(metric) {
-		return RunningAverages
+		return runningAveragesType
 	}
 
-	return Other
+	return otherType
 }
 
 func convertMetric(metric string, ch chan<- prometheus.Metric) error {
@@ -231,14 +231,14 @@ func convertMetric(metric string, ch chan<- prometheus.Metric) error {
 		return fmt.Errorf("the string doesn't contain a valid metric: %s", metric)
 	}
 
-	switch metricType(metric) {
-	case ReleaseTag:
+	switch getMetricType(metric) {
+	case releaseTagType:
 		return createInfoMetric(metric, ch)
-	case LoadAvg:
+	case loadAvgType:
 		return convertLoadAvg(metric, ch)
-	case StartupTime:
+	case startupTimeType:
 		return convertStartupTime(metric, ch)
-	case RunningAverages:
+	case runningAveragesType:
 		return convertRunningAverages(metric, ch)
 	default:
 		return defaultMetricsConverter(metric, ch)

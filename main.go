@@ -244,9 +244,6 @@ func probeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	// TODO: CI + deploy
-	// TODO: Development env
-	// TODO: Development manual
 	// TODO: Documentation + demo setup
 	http.HandleFunc("/probe", func(w http.ResponseWriter, r *http.Request) {
 		probeHandler(w, r)
