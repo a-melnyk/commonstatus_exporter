@@ -33,4 +33,6 @@ Connection timeout occurs when the exporter sends requests to backends (from whi
 
 Use `make` or `make run` or `docker-compose up --build` to run local development environment which consists of local [prometheus](http://localhost:9090) server, [commonstatus_exporter](http://localhost:9259/metrics) and [testservice](http://localhost:8081/) which is hosting [sample data](./docker/testservice/valid_metrics.txt).
 
+Run `docker-compose down --volumes` to remove the containers and docker volume
+
 On [the prometheus target page](http://localhost:9090/targets) you should see 3 targets: prometheus, exporter, testservice and information about the last scrape and scrape errors. On [the graph page](http://localhost:9090/graph) you can execute queries to retrieve metrics.
