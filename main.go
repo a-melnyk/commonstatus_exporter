@@ -60,7 +60,6 @@ func init() {
 	timeoutSeconds, err = strconv.ParseFloat(getEnv("CS_CONNECTION_TIMEOUT", "8.0"), 64)
 	if err != nil {
 		level.Error(logger).Log("msg", "Wrong value of CS_CONNECTION_TIMEOUT environment variable, using default value", "err", err)
-		os.Exit(1)
 	}
 }
 
