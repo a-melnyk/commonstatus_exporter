@@ -28,7 +28,10 @@ scrape_configs:
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
+      # get host:port from the target url
       - source_labels: [__param_target]
+        regex: '(?:https?\:\/\/)?((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9](?:\:[0-9]{1,5})?).*'
+        replacement: '$1'
         target_label: instance
       - target_label: __address__
         replacement: exporter:9259  # The cs exporter's real hostname:port.

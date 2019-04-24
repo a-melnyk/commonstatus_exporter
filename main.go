@@ -60,6 +60,7 @@ func init() {
 	timeoutSeconds, err = strconv.ParseFloat(getEnv("CS_CONNECTION_TIMEOUT", "8.0"), 64)
 	if err != nil {
 		level.Error(logger).Log("msg", "Wrong value of CS_CONNECTION_TIMEOUT environment variable, using default value", "err", err)
+		timeoutSeconds = 8.0
 	}
 }
 
@@ -80,12 +81,13 @@ func getLogLevel() level.Option {
 }
 
 func getEnv(key, fallback string) string {
-	if value, ok := os.LookupEnv(key); ok {
-		level.Info(logger).Log("msg", "successfully processed env variable", "variable", key, "value", value)
-		return value
+	value, ok := os.LookupEnv(key)
+	if !ok {
+		level.Warn(logger).Log("msg", "env variable doesn't set, using default value", "variable", key, "default_value", fallback)
+		return fallback
 	}
-	level.Warn(logger).Log("msg", "env variable doesn't set, using default value", "variable", key, "default_value", fallback)
-	return fallback
+	level.Info(logger).Log("msg", "successfully processed env variable", "variable", key, "value", value)
+	return value
 }
 
 func isValidMetric(metric string) bool {
@@ -244,9 +246,7 @@ func probeHandler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	// TODO: Documentation + demo setup
-	http.HandleFunc("/probe", func(w http.ResponseWriter, r *http.Request) {
-		probeHandler(w, r)
-	})
+	http.HandleFunc("/probe", probeHandler)
 	http.Handle("/metrics", promhttp.Handler())
 
 	port := getEnv("CS_PORT", "9259")
