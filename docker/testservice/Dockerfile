@@ -1,4 +1,4 @@
-FROM golang:1.12.1 as base
+FROM golang:1.12 as base
 
 WORKDIR /go/src/testserver
 COPY main.go ./
