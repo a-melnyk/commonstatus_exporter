@@ -1,4 +1,4 @@
-CI build status: [![CircleCI](https://circleci.com/gh/gips0n/commonstatus_exporter.svg?style=svg)](https://circleci.com/gh/gips0n/commonstatus_exporter)
+CI build status: [![CircleCI](https://circleci.com/gh/a-melnyk/commonstatus_exporter.svg?style=svg)](https://circleci.com/gh/a-melnyk/commonstatus_exporter)
 
 # commonstatus_exporter
 Prometheus CommonStatus blackbox exporter
